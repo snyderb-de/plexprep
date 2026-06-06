@@ -1,0 +1,8 @@
+# build artifacts
+*.exe
+/plexprep
+/dist/
+
+# OS junk
+.DS_Store
+Thumbs.db
