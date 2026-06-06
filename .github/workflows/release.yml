@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: windows, goarch: amd64, ext: .exe }
+          - { goos: linux, goarch: amd64, ext: "" }
+          - { goos: darwin, goarch: amd64, ext: "" }
+          - { goos: darwin, goarch: arm64, ext: "" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          out="plexprep${{ matrix.ext }}"
+          go build -trimpath -ldflags "-s -w" -o "$out" .
+
+      - name: Package
+        run: |
+          name="plexprep_${{ github.ref_name }}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip "${name}.zip" "plexprep${{ matrix.ext }}" README.md LICENSE 2>/dev/null || zip "${name}.zip" "plexprep${{ matrix.ext }}" README.md
+            echo "ASSET=${name}.zip" >> "$GITHUB_ENV"
+          else
+            tar czf "${name}.tar.gz" "plexprep${{ matrix.ext }}" README.md LICENSE 2>/dev/null || tar czf "${name}.tar.gz" "plexprep${{ matrix.ext }}" README.md
+            echo "ASSET=${name}.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ASSET }}
