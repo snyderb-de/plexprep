@@ -32,9 +32,17 @@ plexprep.exe "Z:\TV Shows\Baseball (1994)"
 ```
 
 Pick a profile → review the per-file savings table (space toggles, `a`/`n`
-select all/none) → Enter to convert. Outputs land beside originals as
-`… (plexprep).mkv`. Originals are never modified — eyeball the results, then
-delete the originals yourself.
+select all/none) → Enter to convert. By default outputs land beside originals
+as `… (plexprep).mkv` and originals are untouched.
+
+### Optional in-place replace
+
+Press `r` on the review screen (or pass `--replace` headlessly) to make each
+output **take the source's name** (as `.mkv`). The source is renamed to
+`<name>.original` as a backup — it is never deleted, so you can eyeball the
+result and purge the `.original` files yourself once happy. The encode is
+written to a temp file and swapped in only on success, so a cancel or failure
+never destroys the source.
 
 The interactive flow opens with an **Analysis** screen: recommended method,
 total space savings, and an estimated encode time — accept it (Enter) or pick a
@@ -46,6 +54,7 @@ Headless (scripting / no TTY):
 plexprep.exe --analyze "Z:\path"           # recommend method + savings + time estimate
 plexprep.exe --dry "Z:\path" [4k|audio]    # per-file preview, no encoding
 plexprep.exe --run "Z:\path" [4k|audio]    # convert, plain-text progress
+plexprep.exe --run "Z:\path" --replace     # convert in place (source → .original)
 ```
 
 ## Build

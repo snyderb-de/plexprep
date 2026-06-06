@@ -87,10 +87,16 @@ func (m Model) handleProg(pr media.Progress) (tea.Model, tea.Cmd) {
 		return m.advance()
 	}
 	if pr.Done {
-		// Record real savings from the output file if present.
+		// Swap the finished temp file into place (sibling, or in-place replace).
 		it := m.sel[m.convIdx]
-		out := media.OutputPath(it.Info.Path)
-		if newInfo, err := media.Probe(out); err == nil {
+		tmp := media.TempPath(it.Info.Path)
+		final, err := media.Finalize(it.Info.Path, tmp, m.replace)
+		if err != nil {
+			m.doneErr++
+			m.convErrs = append(m.convErrs, it.Info.Path+": finalize: "+err.Error())
+			return m.advance()
+		}
+		if newInfo, err := media.Probe(final); err == nil {
 			m.savedReal += it.Info.SizeBytes - newInfo.SizeBytes
 		}
 		m.doneOK++
@@ -198,6 +204,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			for _, it := range m.items {
 				it.Selected = false
 			}
+		case "r":
+			m.replace = !m.replace
 		case "esc":
 			m.state = stateProfile
 		case "enter":

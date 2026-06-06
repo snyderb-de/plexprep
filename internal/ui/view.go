@@ -177,14 +177,19 @@ func (m Model) viewReview() string {
 	if selOrig > 0 {
 		pct = float64(saved) / float64(selOrig) * 100
 	}
+	outMode := copyStyle.Render("sibling “… (plexprep).mkv”")
+	if m.replace {
+		outMode = growStyle.Render("REPLACE in place") + dimRow.Render(" (source → .original backup)")
+	}
 	footer := footerStyle.Render(fmt.Sprintf(
-		"profile %s   ·   selected %s → %s   %s",
+		"profile %s   ·   selected %s → %s   %s\noutput  %s",
 		copyStyle.Render(m.profile.String()),
 		media.HumanBytes(selOrig), media.HumanBytes(selProj),
 		savingsStyle.Render(fmt.Sprintf("save %s (%.0f%%)", media.HumanBytes(saved), pct)),
+		outMode,
 	))
 
-	help := helpStyle.Render("  ↑/↓ move · space toggle · a all · n none · enter ▸ CONVERT · esc back · q quit")
+	help := helpStyle.Render("  ↑/↓ move · space toggle · a all · n none · r replace-mode · enter ▸ CONVERT · esc back · q quit")
 	return boxStyle.Render(strings.Join(rows, "\n")) + "\n" + footer + "\n" + help
 }
 

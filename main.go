@@ -20,18 +20,22 @@ USAGE
   plexprep [folder]                 launch the interactive TUI
                                     (opens on an analysis of [folder] if given)
   plexprep --analyze <folder>       recommend a method + savings + time estimate
-  plexprep --dry     <folder> [p]   per-file preview table, no encoding
-  plexprep --run     <folder> [p]   convert headlessly, plain-text progress
-  plexprep --help | -h              show this help
+  plexprep --dry     <folder> [p]            per-file preview table, no encoding
+  plexprep --run     <folder> [p] [--replace] convert headlessly, plain progress
+  plexprep --help | -h                       show this help
 
 PROFILE [p]  (headless --dry/--run only; default: zero-transcode)
   (none)   Zero-Transcode (SD/HD)   x264 CRF18 for legacy, copy modern
   4k       4K UHD                    x265/HEVC CRF20 for legacy, keep HEVC
   audio    Audio-only fix            copy video, just add AAC stereo
 
+OUTPUT
+  • Default: written beside the original as "… (plexprep).mkv"; source untouched.
+  • --replace (optional): output takes the source's name (as .mkv) and the
+    source is renamed to "<name>.original" as a backup (never deleted).
+    In the TUI, toggle this on the review screen with the "r" key.
+
 NOTES
-  • Outputs are written beside originals as "… (plexprep).mkv".
-  • Originals are never modified.
   • Requires ffmpeg and ffprobe on PATH.
 `
 
@@ -53,22 +57,25 @@ func main() {
 		return
 	}
 
-	// Headless: plexprep --dry|--run <folder> [profile]
+	// Headless: plexprep --dry|--run <folder> [profile] [--replace]
 	if len(os.Args) > 2 && (os.Args[1] == "--dry" || os.Args[1] == "--run") {
 		prof := media.ProfileZeroTranscode
-		if len(os.Args) > 3 {
-			switch os.Args[3] {
+		replace := false
+		for _, a := range os.Args[3:] {
+			switch a {
 			case "4k":
 				prof = media.Profile4K
 			case "audio":
 				prof = media.ProfileAudioOnly
+			case "--replace":
+				replace = true
 			}
 		}
 		var err error
 		if os.Args[1] == "--dry" {
 			err = ui.DryRun(os.Args[2], prof)
 		} else {
-			err = ui.RunHeadless(os.Args[2], prof)
+			err = ui.RunHeadless(os.Args[2], prof, replace)
 		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)

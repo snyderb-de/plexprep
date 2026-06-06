@@ -37,6 +37,7 @@ type Model struct {
 
 	profileIdx int
 	profile    media.Profile
+	replace    bool // optional in-place replace (default off)
 
 	report *media.Report
 
@@ -166,8 +167,8 @@ func (m *Model) listen() tea.Cmd {
 
 func (m *Model) startEncode() tea.Cmd {
 	it := m.sel[m.convIdx]
-	out := media.OutputPath(it.Info.Path)
-	m.ch = media.Encode(m.ctx, it.Info, it.Plan, out)
+	tmp := media.TempPath(it.Info.Path)
+	m.ch = media.Encode(m.ctx, it.Info, it.Plan, tmp)
 	m.curFrac = 0
 	m.curSpeed = ""
 	return m.listen()

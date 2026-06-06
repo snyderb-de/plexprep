@@ -58,11 +58,3 @@ func BuildItem(path string, profile Profile) (*Item, error) {
 	it.Selected = !it.Plan.NoOp()
 	return it, nil
 }
-
-// OutputPath returns the sibling output filename for an item.
-func OutputPath(in string) string {
-	ext := filepath.Ext(in)
-	base := strings.TrimSuffix(in, ext)
-	// Force MKV output (holds AC3 + image subs + multi-audio cleanly).
-	return base + " (plexprep).mkv"
-}
