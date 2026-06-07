@@ -38,6 +38,7 @@ type Model struct {
 	profileIdx int
 	profile    media.Profile
 	replace    bool // optional in-place replace (default off)
+	purge      bool // optional: delete each original after it converts (default off)
 
 	report *media.Report
 

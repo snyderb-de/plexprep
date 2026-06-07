@@ -4,39 +4,45 @@ import (
 	"fmt"
 
 	"plexprep/internal/media"
+	"plexprep/internal/style"
 )
 
-// AnalyzeReport prints a folder analysis headlessly.
+// AnalyzeReport prints a styled folder analysis headlessly.
 func AnalyzeReport(root string) error {
 	r, err := media.Analyze(root)
 	if err != nil {
 		return err
 	}
-	fmt.Println()
-	fmt.Println("  📊 ANALYSIS ·", root)
-	fmt.Println("  ───────────────────────────────────────────────")
-	fmt.Printf("  files            %d", r.Files)
+
+	banner(`--analyze "` + root + `"`)
+
+	files := style.Bright.B(fmt.Sprintf("%d", r.Files))
 	if r.Files4K > 0 {
-		fmt.Printf("  (%d are 4K)", r.Files4K)
+		files += style.Mid.S(fmt.Sprintf("  (%d 4K)", r.Files4K))
 	}
 	if r.ProbeErrors > 0 {
-		fmt.Printf("  [%d unreadable]", r.ProbeErrors)
+		files += style.Red.S(fmt.Sprintf("  [%d unreadable]", r.ProbeErrors))
 	}
+
+	lines := []string{
+		style.Mid.S("root      : ") + style.Green.S(root),
+		style.Mid.S("files     : ") + files,
+		style.Mid.S("codecs    : ") + style.Green.S(r.CodecSummary()),
+		style.Mid.S("method    : ") + methodLabel(r.Recommended),
+		style.Mid.S("why       : ") + style.Dim.S(style.Trunc(r.Why, 60)),
+		style.Mid.S("work      : ") + workLine(r.ReencodeCount, r.AudioOnly, r.NoOp),
+		style.Mid.S("size      : ") + style.Green.S(media.HumanBytes(r.OrigBytes)) +
+			style.Dim.S(" -> ") + style.Green.S(media.HumanBytes(r.ProjBytes)),
+		style.Mid.S("reclaim   : ") + savings(r.SavedBytes(), r.SavedPct(), 10),
+		style.Mid.S("est. time : ") + style.Bright.S("~"+media.HumanDuration(r.EstSecs)) +
+			style.Dim.S("  (varies w/ CPU; copies instant)"),
+	}
+	fmt.Println(style.Frame("ANALYSIS", lines))
 	fmt.Println()
-	fmt.Printf("  source codecs    %s\n", r.CodecSummary())
-	fmt.Println()
-	fmt.Printf("  ✅ recommended   %s\n", r.Recommended)
-	fmt.Printf("     why           %s\n", r.Why)
-	fmt.Println()
-	fmt.Printf("  work             %d re-encode · %d audio-only · %d already-good\n",
-		r.ReencodeCount, r.AudioOnly, r.NoOp)
-	fmt.Printf("  space            %s → %s   (save %s, %.0f%%)\n",
-		media.HumanBytes(r.OrigBytes), media.HumanBytes(r.ProjBytes),
-		media.HumanBytes(r.SavedBytes()), r.SavedPct())
-	fmt.Printf("  est. encode time ~%s   (varies with CPU; copies are instant)\n",
-		media.HumanDuration(r.EstSecs))
-	fmt.Println()
-	fmt.Println("  next:  plexprep \"" + root + "\"   (interactive)   ·   --run to batch now")
+	fmt.Println(style.Dim.S("  // next: ") +
+		style.Green.S("plexprep \""+root+"\"") + style.Dim.S(" (interactive)  ·  ") +
+		style.Green.S("--dry") + style.Dim.S(" to list files  ·  ") +
+		style.Green.S("--run") + style.Dim.S(" to convert"))
 	fmt.Println()
 	return nil
 }

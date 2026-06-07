@@ -90,7 +90,7 @@ func (m Model) handleProg(pr media.Progress) (tea.Model, tea.Cmd) {
 		// Swap the finished temp file into place (sibling, or in-place replace).
 		it := m.sel[m.convIdx]
 		tmp := media.TempPath(it.Info.Path)
-		final, err := media.Finalize(it.Info.Path, tmp, m.replace)
+		final, err := media.Finalize(it.Info.Path, tmp, m.replace, m.purge)
 		if err != nil {
 			m.doneErr++
 			m.convErrs = append(m.convErrs, it.Info.Path+": finalize: "+err.Error())
@@ -206,6 +206,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case "r":
 			m.replace = !m.replace
+		case "d":
+			m.purge = !m.purge
 		case "esc":
 			m.state = stateProfile
 		case "enter":

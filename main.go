@@ -6,10 +6,48 @@ import (
 	"strings"
 
 	"plexprep/internal/media"
+	"plexprep/internal/style"
 	"plexprep/internal/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// printUsage renders the help in the phosphor-terminal style.
+func printUsage() {
+	g, a, b, d, br := style.Green, style.Amber, style.Blue, style.Dim, style.Bright
+	fmt.Println()
+	fmt.Println("  " + br.B("plexprep") + d.S(" — zero-transcode media forge"))
+	fmt.Println("  " + d.S("Batch-convert video into Plex/Jellyfin direct-play files."))
+	fmt.Println("  " + d.S("Re-encodes only legacy video; modern video is copied. Audio kept + AAC fallback."))
+	fmt.Println()
+	cmd := func(c, desc string) string { return "  " + g.S(style.Pad(c, 46)) + d.S(desc) }
+	fmt.Println(style.Frame("USAGE", []string{
+		cmd("plexprep [folder]", "launch the interactive TUI"),
+		cmd("plexprep --analyze <folder>", "recommend method + savings + time"),
+		cmd("plexprep --report  <root> [out]", "per-subfolder report → .xlsx + .html"),
+		cmd("plexprep --dry     <folder> [p]", "per-file preview, no encoding"),
+		cmd("plexprep --run     <folder> [p] [--replace]", "convert headlessly, live progress"),
+		cmd("plexprep --help | -h", "show this help"),
+	}))
+	fmt.Println()
+	prof := func(k, name, desc string) string {
+		return "  " + a.S(style.Pad(k, 8)) + br.S(style.Pad(name, 22)) + d.S(desc)
+	}
+	fmt.Println(style.Frame("PROFILE [p]  (--dry/--run; default zero-transcode)", []string{
+		prof("(none)", "Zero-Transcode", "x264 CRF18 for legacy, copy modern"),
+		prof("4k", "4K UHD", "x265/HEVC CRF20 for legacy, keep HEVC"),
+		prof("audio", "Audio-only fix", "copy video, add AAC stereo only"),
+	}))
+	fmt.Println()
+	fmt.Println(style.Frame("OUTPUT", []string{
+		d.S("default  : sibling ") + g.S(`"… (plexprep).mkv"`) + d.S(", source untouched"),
+		d.S("--replace: output takes source name; source → ") + a.S(".original") + d.S(" backup"),
+		d.S("--delete : remove each original right after it converts ") + style.Red.S("(irreversible)"),
+		d.S("           frees space mid-batch · TUI toggles: ") + b.S("r") + d.S(" replace · ") + b.S("d") + d.S(" delete"),
+		d.S("needs    : ") + br.S("ffmpeg") + d.S(" + ") + br.S("ffprobe") + d.S(" on PATH"),
+	}))
+	fmt.Println()
+}
 
 const usage = `plexprep — zero-transcode media forge ✨
 
@@ -23,7 +61,7 @@ USAGE
   plexprep --analyze <folder>       recommend a method + savings + time estimate
   plexprep --report  <root> [out]   analyze each 1st-level subfolder → .xlsx + .html
   plexprep --dry     <folder> [p]            per-file preview table, no encoding
-  plexprep --run     <folder> [p] [--replace] convert headlessly, plain progress
+  plexprep --run     <folder> [p] [--replace] [--delete]  convert headlessly
   plexprep --help | -h                       show this help
 
 PROFILE [p]  (headless --dry/--run only; default: zero-transcode)
@@ -34,8 +72,10 @@ PROFILE [p]  (headless --dry/--run only; default: zero-transcode)
 OUTPUT
   • Default: written beside the original as "… (plexprep).mkv"; source untouched.
   • --replace (optional): output takes the source's name (as .mkv) and the
-    source is renamed to "<name>.original" as a backup (never deleted).
-    In the TUI, toggle this on the review screen with the "r" key.
+    source is renamed to "<name>.original" as a backup.
+  • --delete (optional): remove each original right after it converts, freeing
+    space mid-batch. Irreversible. The source is only removed once the new file
+    is safely in place. TUI toggles: "r" replace, "d" delete.
 
 NOTES
   • Requires ffmpeg and ffprobe on PATH.
@@ -45,7 +85,7 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "--help", "-h", "help":
-			fmt.Print(usage)
+			printUsage()
 			return
 		}
 	}
@@ -80,6 +120,7 @@ func main() {
 		if mode == "--analyze" || mode == "--dry" || mode == "--run" {
 			prof := media.ProfileZeroTranscode
 			replace := false
+			purge := false
 			folder := ""
 			for _, a := range os.Args[2:] {
 				switch a {
@@ -89,6 +130,8 @@ func main() {
 					prof = media.ProfileAudioOnly
 				case "--replace":
 					replace = true
+				case "--delete", "--purge":
+					purge = true
 				default:
 					if folder == "" && !strings.HasPrefix(a, "--") {
 						folder = a
@@ -106,7 +149,7 @@ func main() {
 			case "--dry":
 				err = ui.DryRun(folder, prof)
 			case "--run":
-				err = ui.RunHeadless(folder, prof, replace)
+				err = ui.RunHeadless(folder, prof, replace, purge)
 			}
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "error:", err)

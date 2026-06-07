@@ -2,17 +2,18 @@ package ui
 
 import "github.com/charmbracelet/lipgloss"
 
-// Palette — neon/charm vibes.
+// Palette — phosphor terminal (matches the console + HTML report).
+// Names kept from the old neon theme; values remapped to greens/amber.
 var (
-	cPink   = lipgloss.Color("#FF6AC1")
-	cPurple = lipgloss.Color("#A682FF")
-	cCyan   = lipgloss.Color("#5EF6FF")
-	cGreen  = lipgloss.Color("#6EE7A0")
-	cYellow = lipgloss.Color("#FFD866")
-	cRed    = lipgloss.Color("#FF6B6B")
-	cDim    = lipgloss.Color("#6C7086")
-	cFg     = lipgloss.Color("#E6E6F0")
-	cBg     = lipgloss.Color("#1A1B26")
+	cPink   = lipgloss.Color("#3AD968") // phosphor green (title bg, gradient start)
+	cPurple = lipgloss.Color("#2A874B") // dim green (borders, subtitle, gradient mid)
+	cCyan   = lipgloss.Color("#FFCC33") // amber (accent/selection/badge, gradient end)
+	cGreen  = lipgloss.Color("#3AD968") // savings green
+	cYellow = lipgloss.Color("#FFCC33") // amber
+	cRed    = lipgloss.Color("#FF5F56")
+	cDim    = lipgloss.Color("#2A6B40") // dim green
+	cFg     = lipgloss.Color("#C8E8D0") // soft green-white
+	cBg     = lipgloss.Color("#0A0C0A") // near-black
 )
 
 var (

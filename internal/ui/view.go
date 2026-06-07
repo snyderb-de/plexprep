@@ -164,7 +164,7 @@ func (m Model) viewReview() string {
 		row := fmt.Sprintf(" %s %-34s %-9s %8s %8s %s", check, name, codec, size, est, savStyled)
 		if i == m.cursor {
 			row = selectedRow.Render("▸") + row[len([]byte("▸"))-2:]
-			row = lipgloss.NewStyle().Background(lipgloss.Color("#26273b")).Render(row)
+			row = lipgloss.NewStyle().Background(lipgloss.Color("#0F1F14")).Render(row)
 		}
 		if it.Is4K {
 			row += " " + badge4K.Render("4K")
@@ -181,6 +181,9 @@ func (m Model) viewReview() string {
 	if m.replace {
 		outMode = growStyle.Render("REPLACE in place") + dimRow.Render(" (source → .original backup)")
 	}
+	if m.purge {
+		outMode += "  " + growStyle.Render("⚠ DELETE originals after convert")
+	}
 	footer := footerStyle.Render(fmt.Sprintf(
 		"profile %s   ·   selected %s → %s   %s\noutput  %s",
 		copyStyle.Render(m.profile.String()),
@@ -189,7 +192,7 @@ func (m Model) viewReview() string {
 		outMode,
 	))
 
-	help := helpStyle.Render("  ↑/↓ move · space toggle · a all · n none · r replace-mode · enter ▸ CONVERT · esc back · q quit")
+	help := helpStyle.Render("  ↑/↓ move · space toggle · a all · n none · r replace · d delete-originals · enter ▸ CONVERT · esc back · q quit")
 	return boxStyle.Render(strings.Join(rows, "\n")) + "\n" + footer + "\n" + help
 }
 

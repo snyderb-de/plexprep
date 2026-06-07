@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"plexprep/internal/media"
+	"plexprep/internal/style"
 
 	"github.com/xuri/excelize/v2"
 )
@@ -39,16 +40,20 @@ func ReportFolders(root, out string) error {
 		return fmt.Errorf("no subfolders under %s", root)
 	}
 
+	banner(fmt.Sprintf(`--report "%s"`, root))
+
 	rows := make([]folderRow, 0, len(subs))
 	for i, sub := range subs {
-		fmt.Printf("\r  analyzing %d/%d: %-40.40s", i+1, len(subs), filepath.Base(sub))
+		fmt.Printf("\r  %s %s %s   ", style.Amber.S("▸"),
+			style.Mid.S(fmt.Sprintf("[%d/%d]", i+1, len(subs))),
+			style.Bright.S(style.Trunc(filepath.Base(sub), 50)))
 		rep, err := media.Analyze(sub)
 		if err != nil {
 			continue
 		}
 		rows = append(rows, folderRow{Name: filepath.Base(sub), Report: rep})
 	}
-	fmt.Printf("\r  analyzed %d subfolders%-40s\n", len(rows), "")
+	fmt.Printf("\r  %s analyzed %s subfolders%-40s\n", style.Green.B("✓"), style.Bright.B(fmt.Sprintf("%d", len(rows))), "")
 
 	base := out
 	if base == "" {
@@ -65,7 +70,11 @@ func ReportFolders(root, out string) error {
 	if err := writeHTML(htmlPath, root, rows); err != nil {
 		return fmt.Errorf("html: %w", err)
 	}
-	fmt.Printf("  ✓ %s\n  ✓ %s\n", xlsxPath, htmlPath)
+	fmt.Println(style.Frame("REPORT WRITTEN", []string{
+		style.Mid.S("xlsx : ") + style.Green.S(xlsxPath),
+		style.Mid.S("html : ") + style.Green.S(htmlPath),
+	}))
+	fmt.Println()
 	return nil
 }
 
@@ -151,20 +160,64 @@ func mustCell(col, row int) string {
 	return c
 }
 
-// methodEmoji maps a recommended profile to an emoji for the report.
-func methodEmoji(p media.Profile) string {
+// methodTag returns a short uppercase code for the recommended profile.
+func methodTag(p media.Profile) string {
 	switch p {
 	case media.Profile4K:
-		return "🟣"
+		return "x265"
 	case media.ProfileAudioOnly:
-		return "🔊"
+		return "aac"
 	default:
-		return "🎬"
+		return "x264"
 	}
 }
 
+// asciiBar renders a fixed-width [██████░░░░] meter for a percent.
+func asciiBar(pct float64) string {
+	const n = 10
+	p := pct
+	if p < 0 {
+		p = 0
+	}
+	if p > 100 {
+		p = 100
+	}
+	filled := int(p/100*float64(n) + 0.5)
+	return strings.Repeat("█", filled) + strings.Repeat("░", n-filled)
+}
+
+// saveTier maps a saving to a color class: grows red, then yellow→blue→green.
+func saveTier(savedBytes int64, pct float64) string {
+	switch {
+	case savedBytes < 0:
+		return "t-grow"
+	case pct >= 35:
+		return "t-high"
+	case pct >= 15:
+		return "t-mid"
+	default:
+		return "t-low"
+	}
+}
+
+// savedCell renders the savings/growth cell contents (bar + figure).
+func savedCell(savedBytes int64, pct float64) string {
+	if savedBytes < 0 {
+		// File would grow — show the increase, no negative percent.
+		return fmt.Sprintf(`<span class="meter">░░░░░░░░░░</span> ▲ <span class="bytes">+%s larger</span>`,
+			media.HumanBytes(-savedBytes))
+	}
+	return fmt.Sprintf(`<span class="meter">%s</span> %.0f%% <span class="bytes">%s</span>`,
+		asciiBar(pct), pct, media.HumanBytes(savedBytes))
+}
+
+// htmlCols are the HTML table's columns (fewer + merged vs the XLSX detail set,
+// so the table fits without horizontal scroll).
+var htmlCols = []string{
+	"folder", "files", "codecs", "method", "size", "→ est", "saved", "time", "work", "why",
+}
+
 func writeHTML(path, root string, rows []folderRow) error {
-	// Totals first (used in the hero stat cards).
 	var totOrig, totProj int64
 	var totSecs float64
 	var totFiles, totReenc int
@@ -184,30 +237,42 @@ func writeHTML(path, root string, rows []folderRow) error {
 	var b strings.Builder
 	b.WriteString(`<!doctype html><html lang="en"><head><meta charset="utf-8">`)
 	b.WriteString(`<meta name="viewport" content="width=device-width,initial-scale=1">`)
-	fmt.Fprintf(&b, "<title>✨ plexprep report — %s</title>", html.EscapeString(filepath.Base(root)))
+	fmt.Fprintf(&b, "<title>plexprep report :: %s</title>", html.EscapeString(filepath.Base(root)))
 	b.WriteString(reportCSS)
-	b.WriteString(`</head><body><div class="aurora"></div><main>`)
+	b.WriteString(`</head><body><div class="crt"></div><main><div class="term">`)
 
-	// Hero
-	b.WriteString(`<header class="hero">`)
-	b.WriteString(`<h1 class="glow" data-text="✨ plexprep">✨ plexprep</h1>`)
-	b.WriteString(`<div class="tagline">folder report</div>`)
-	fmt.Fprintf(&b, `<div class="sub">📁 %s &nbsp;·&nbsp; %d subfolders &nbsp;·&nbsp; %s</div>`,
-		html.EscapeString(root), len(rows), time.Now().Format("Jan 2 2006 · 15:04"))
-	b.WriteString(`</header>`)
+	// Title bar
+	b.WriteString(`<div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>`)
+	b.WriteString(`<span class="bartitle">plexprep — folder report</span></div>`)
 
-	// Stat cards
-	b.WriteString(`<section class="cards">`)
-	statCard(&b, "💾", "Reclaimable", media.HumanBytes(totOrig-totProj), fmt.Sprintf("%.0f%% smaller", savePct), "green")
-	statCard(&b, "📦", "Current size", media.HumanBytes(totOrig), media.HumanBytes(totProj)+" after", "cyan")
-	statCard(&b, "⏱️", "Est. encode", "~"+media.HumanDuration(totSecs), "varies w/ CPU", "purple")
-	statCard(&b, "🎞️", "Files", fmt.Sprintf("%d", totFiles), fmt.Sprintf("%d need re-encode", totReenc), "yellow")
-	b.WriteString(`</section>`)
+	// Prompt + summary readout
+	b.WriteString(`<div class="body">`)
+	fmt.Fprintf(&b, `<div class="prompt"><span class="usr">bag@plexprep</span>:<span class="pwd">~</span>$ plexprep --report %s<span class="cur"></span></div>`,
+		html.EscapeString(root))
+
+	fmt.Fprintf(&b, `<pre class="summary">┌─ SUMMARY ─────────────────────────────────────────────┐
+ root      : %s
+ scanned   : %d subfolders · %d files · %d need re-encode
+ size      : %s  ->  %s
+ reclaim   : <span class="save">%s</span>  <span class="save">(%.0f%%)</span>
+ est. time : ~%s   <span class="muted">(varies w/ CPU; copies instant)</span>
+ generated : %s
+└───────────────────────────────────────────────────────┘</pre>`,
+		html.EscapeString(root), len(rows), totFiles, totReenc,
+		media.HumanBytes(totOrig), media.HumanBytes(totProj),
+		media.HumanBytes(totOrig-totProj), savePct,
+		media.HumanDuration(totSecs),
+		time.Now().Format("2006-01-02 15:04:05"))
 
 	// Table
-	b.WriteString(`<section class="tablewrap"><table><thead><tr>`)
-	numCols := map[int]bool{1: true, 2: true, 5: true, 6: true, 7: true, 8: true, 9: true, 10: true, 11: true, 12: true}
-	for i, h := range headers {
+	b.WriteString(`<table><colgroup>`)
+	widths := []string{"17%", "5%", "11%", "6%", "8%", "8%", "17%", "6%", "10%", "12%"}
+	for _, w := range widths {
+		fmt.Fprintf(&b, `<col style="width:%s">`, w)
+	}
+	b.WriteString(`</colgroup><thead><tr>`)
+	numCols := map[int]bool{1: true, 4: true, 5: true, 7: true}
+	for i, h := range htmlCols {
 		cls := ""
 		if numCols[i] {
 			cls = ` class="num"`
@@ -216,141 +281,128 @@ func writeHTML(path, root string, rows []folderRow) error {
 	}
 	b.WriteString("</tr></thead><tbody>")
 
-	maxOrig := int64(1)
 	for _, row := range rows {
-		if row.Report.OrigBytes > maxOrig {
-			maxOrig = row.Report.OrigBytes
-		}
-	}
-
-	for i, row := range rows {
 		rp := row.Report
-		saveCls := "save"
-		if rp.SavedBytes() < 0 {
-			saveCls = "grow"
-		}
-		four := "—"
+		k4 := ""
 		if rp.Files4K > 0 {
-			four = fmt.Sprintf(`<span class="badge">%d ◆</span>`, rp.Files4K)
+			k4 = fmt.Sprintf(` <span class="k4">4K·%d</span>`, rp.Files4K)
 		}
-		// Saving meter width (clamped 0..100).
-		meter := rp.SavedPct()
-		if meter < 0 {
-			meter = 0
-		}
-		if meter > 100 {
-			meter = 100
-		}
-		// Stagger the fade-in.
-		fmt.Fprintf(&b, `<tr style="animation-delay:%dms">`, i*45)
-		fmt.Fprintf(&b, `<td class="folder">📂 %s</td>`, html.EscapeString(row.Name))
-		fmt.Fprintf(&b, `<td class="num">%d</td>`, rp.Files)
-		fmt.Fprintf(&b, `<td class="num">%s</td>`, four)
-		fmt.Fprintf(&b, `<td class="codecs">%s</td>`, html.EscapeString(rp.CodecSummary()))
-		fmt.Fprintf(&b, `<td class="method">%s %s</td>`, methodEmoji(rp.Recommended), html.EscapeString(rp.Recommended.String()))
-		fmt.Fprintf(&b, `<td class="num">%s</td>`, media.HumanBytes(rp.OrigBytes))
-		fmt.Fprintf(&b, `<td class="num">%s</td>`, media.HumanBytes(rp.ProjBytes))
-		fmt.Fprintf(&b, `<td class="num %s">%s</td>`, saveCls, media.HumanBytes(rp.SavedBytes()))
-		fmt.Fprintf(&b, `<td class="num %s"><div class="meter"><span style="width:%.0f%%"></span></div>%.0f%%</td>`, saveCls, meter, rp.SavedPct())
-		fmt.Fprintf(&b, `<td class="num">%s</td>`, media.HumanDuration(rp.EstSecs))
-		fmt.Fprintf(&b, `<td class="num">%d</td>`, rp.ReencodeCount)
-		fmt.Fprintf(&b, `<td class="num">%d</td>`, rp.AudioOnly)
-		fmt.Fprintf(&b, `<td class="num">%d</td>`, rp.NoOp)
-		fmt.Fprintf(&b, `<td class="why">%s</td>`, html.EscapeString(rp.Why))
+		work := fmt.Sprintf(
+			`<span class="we">%d</span> re-encode<br><span class="wa">%d</span> add-AAC<br><span class="wk">%d</span> keep`,
+			rp.ReencodeCount, rp.AudioOnly, rp.NoOp)
+
+		b.WriteString("<tr>")
+		fmt.Fprintf(&b, `<td class="folder" data-l="folder">%s%s</td>`, html.EscapeString(row.Name), k4)
+		fmt.Fprintf(&b, `<td class="num" data-l="files">%d</td>`, rp.Files)
+		fmt.Fprintf(&b, `<td class="codecs" data-l="codecs">%s</td>`, html.EscapeString(rp.CodecSummary()))
+		fmt.Fprintf(&b, `<td class="method" data-l="method">%s</td>`, html.EscapeString(methodTag(rp.Recommended)))
+		fmt.Fprintf(&b, `<td class="num" data-l="size">%s</td>`, media.HumanBytes(rp.OrigBytes))
+		fmt.Fprintf(&b, `<td class="num" data-l="→ est">%s</td>`, media.HumanBytes(rp.ProjBytes))
+		fmt.Fprintf(&b, `<td class="%s" data-l="saved">%s</td>`,
+			saveTier(rp.SavedBytes(), rp.SavedPct()), savedCell(rp.SavedBytes(), rp.SavedPct()))
+		fmt.Fprintf(&b, `<td class="num" data-l="time">%s</td>`, media.HumanDuration(rp.EstSecs))
+		fmt.Fprintf(&b, `<td class="work" data-l="work">%s</td>`, work)
+		fmt.Fprintf(&b, `<td class="why" data-l="why">%s</td>`, html.EscapeString(rp.Why))
 		b.WriteString("</tr>")
 	}
 	b.WriteString("</tbody><tfoot><tr>")
-	fmt.Fprintf(&b, `<td class="folder">Σ TOTAL</td><td colspan="4"></td>`)
+	totSaved := totOrig - totProj
+	fmt.Fprintf(&b, `<td class="folder">TOTAL</td><td class="num">%d</td><td colspan="2"></td>`, totFiles)
 	fmt.Fprintf(&b, `<td class="num">%s</td><td class="num">%s</td>`, media.HumanBytes(totOrig), media.HumanBytes(totProj))
-	fmt.Fprintf(&b, `<td class="num save">%s</td><td class="num save">%.0f%%</td>`, media.HumanBytes(totOrig-totProj), savePct)
-	fmt.Fprintf(&b, `<td class="num">%s</td><td colspan="4"></td>`, media.HumanDuration(totSecs))
-	b.WriteString("</tr></tfoot></table></section>")
-	b.WriteString(`<footer>Sizes &amp; times are estimates · copies are near-instant · generated by <span class="glow-sm">plexprep</span> ✨</footer>`)
-	b.WriteString("</main></body></html>")
+	fmt.Fprintf(&b, `<td class="%s">%s</td>`, saveTier(totSaved, savePct), savedCell(totSaved, savePct))
+	fmt.Fprintf(&b, `<td class="num">%s</td><td colspan="2"></td>`, media.HumanDuration(totSecs))
+	b.WriteString("</tr></tfoot></table>")
+
+	b.WriteString(`<div class="legend">` +
+		`<b>work</b> &mdash; <span class="we">re-encode</span> video · <span class="wa">add-AAC</span> only · <span class="wk">keep</span> as-is` +
+		` &nbsp;&nbsp;|&nbsp;&nbsp; <b>bar</b> &mdash; <span class="t-low">low</span> → <span class="t-mid">mid</span> → <span class="t-high">high</span> savings · <span class="t-grow">▲ larger</span></div>`)
+	b.WriteString(`<div class="done">// estimates only · copies are near-instant&nbsp;<span class="cur"></span></div>`)
+	b.WriteString(`</div></div></main></body></html>`)
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }
 
-func statCard(b *strings.Builder, emoji, label, big, small, tone string) {
-	fmt.Fprintf(b, `<div class="card %s"><div class="ico">%s</div><div class="lbl">%s</div><div class="big">%s</div><div class="sml">%s</div></div>`,
-		tone, emoji, html.EscapeString(label), html.EscapeString(big), html.EscapeString(small))
-}
-
 const reportCSS = `<style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 :root{
-  --bg:#0d0e1a;--bg2:#12132440;--card:#181a2e;--fg:#d7defb;--dim:#7079a8;
-  --pink:#ff6ac1;--purple:#a682ff;--cyan:#5ef6ff;--green:#6ee7a0;--yellow:#ffd866;--red:#ff6b6b;
+  --bg:#080a08;--panel:#0c0f0c;--fg:#3ad968;--bright:#a8ffc4;--dim:#1f6b3a;--mid:#2a874b;
+  --amber:#ffcc33;--blue:#4db5ff;--red:#ff5f56;--line:#13351f;
 }
 *{box-sizing:border-box}
-html{scroll-behavior:smooth}
 body{margin:0;background:var(--bg);color:var(--fg);
-  font-family:'Space Grotesk',system-ui,Segoe UI,sans-serif;font-size:14px;
-  min-height:100vh;overflow-x:hidden;position:relative}
-/* drifting aurora backdrop */
-.aurora{position:fixed;inset:-30%;z-index:0;pointer-events:none;filter:blur(90px);opacity:.45;
-  background:
-    radial-gradient(40% 40% at 20% 30%,#ff6ac155,transparent 60%),
-    radial-gradient(45% 45% at 80% 25%,#5ef6ff44,transparent 60%),
-    radial-gradient(50% 50% at 60% 80%,#a682ff55,transparent 60%);
-  animation:drift 22s ease-in-out infinite alternate}
-@keyframes drift{0%{transform:translate(0,0) rotate(0deg) scale(1)}100%{transform:translate(4%,-3%) rotate(8deg) scale(1.12)}}
-main{position:relative;z-index:1;max-width:1280px;margin:0 auto;padding:44px 28px 60px}
-.hero{text-align:center;margin-bottom:36px}
-h1.glow{font-size:54px;margin:0;font-weight:700;letter-spacing:-1px;position:relative;
-  background:linear-gradient(92deg,var(--pink),var(--purple) 45%,var(--cyan));
-  -webkit-background-clip:text;background-clip:text;color:transparent;
-  filter:drop-shadow(0 0 18px #a682ff66);
-  background-size:220% auto;animation:shimmer 6s linear infinite}
-@keyframes shimmer{to{background-position:220% center}}
-.tagline{font-size:18px;color:var(--dim);letter-spacing:6px;text-transform:uppercase;margin-top:2px}
-.sub{color:var(--dim);margin-top:14px;font-size:13px}
-/* stat cards */
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:30px}
-.card{background:linear-gradient(160deg,#1c1f38,#14152600);border:1px solid #ffffff14;border-radius:16px;
-  padding:18px 20px;position:relative;overflow:hidden;backdrop-filter:blur(6px);
-  transition:transform .25s cubic-bezier(.2,.8,.2,1),box-shadow .25s;animation:rise .6s both}
-.card:hover{transform:translateY(-4px)}
-.card .ico{font-size:26px;filter:drop-shadow(0 0 10px currentColor)}
-.card .lbl{color:var(--dim);text-transform:uppercase;letter-spacing:1.5px;font-size:11px;margin-top:8px}
-.card .big{font-size:28px;font-weight:700;margin-top:2px}
-.card .sml{color:var(--dim);font-size:12px;margin-top:2px}
-.card.green{color:var(--green)}.card.green:hover{box-shadow:0 10px 40px -10px var(--green)}
-.card.cyan{color:var(--cyan)}.card.cyan:hover{box-shadow:0 10px 40px -10px var(--cyan)}
-.card.purple{color:var(--purple)}.card.purple:hover{box-shadow:0 10px 40px -10px var(--purple)}
-.card.yellow{color:var(--yellow)}.card.yellow:hover{box-shadow:0 10px 40px -10px var(--yellow)}
-.card .big,.card .sml,.card .lbl{color:var(--fg)}
-@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-/* table */
-.tablewrap{border-radius:16px;overflow:auto;border:1px solid #ffffff12;
-  box-shadow:0 24px 80px -30px #000;background:var(--card)}
-table{border-collapse:collapse;width:100%;font-size:13px}
-thead th{position:sticky;top:0;z-index:2;text-align:left;padding:14px 14px;white-space:nowrap;
-  background:linear-gradient(92deg,#6c5ce7,#8b5cf6);color:#fff;font-weight:600;letter-spacing:.3px}
+  font-family:'JetBrains Mono',ui-monospace,'Cascadia Code',Consolas,monospace;
+  font-size:13px;line-height:1.45;min-height:100vh;overflow-x:hidden}
+/* faint CRT scanlines */
+.crt{position:fixed;inset:0;z-index:5;pointer-events:none;opacity:.5;
+  background:repeating-linear-gradient(0deg,#0000 0 2px,#00000055 2px 3px)}
+main{width:100%;max-width:1900px;margin:0 auto;padding:clamp(14px,3vw,36px)}
+.term{border:1px solid var(--line);border-radius:6px;background:var(--panel);
+  box-shadow:0 0 0 1px #0a1a10,0 18px 60px -30px #000}
+.bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);
+  background:#0a0d0a}
+.dot{width:11px;height:11px;border-radius:50%}
+.dot.r{background:#ff5f56}.dot.y{background:#ffbd2e}.dot.g{background:#27c93f}
+.bartitle{margin-left:8px;color:var(--mid);font-size:12px;letter-spacing:.5px}
+.body{padding:16px 18px 20px}
+.prompt{color:var(--bright);margin-bottom:12px;word-break:break-all}
+.usr{color:var(--amber)}.pwd{color:var(--mid)}
+.cur{display:inline-block;width:8px;height:14px;background:var(--fg);margin-left:3px;
+  vertical-align:-2px;animation:blink 1.1s step-end infinite}
+@keyframes blink{50%{opacity:0}}
+.summary{margin:0 0 18px;color:var(--fg);white-space:pre;overflow-x:auto;
+  border:0;font-size:12.5px}
+.summary .save{color:var(--bright)}
+.muted{color:var(--dim)}
+table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px}
+thead th{text-align:left;padding:5px 8px;color:var(--bg);background:var(--fg);
+  text-transform:uppercase;letter-spacing:.5px;font-weight:700;border:1px solid var(--bg)}
 th.num{text-align:right}
-tbody td{padding:11px 14px;border-bottom:1px solid #ffffff0d;white-space:nowrap}
-td.num{text-align:right;font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
-tbody tr{animation:fadein .5s both}
-@keyframes fadein{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
-tbody tr:hover td{background:#ffffff0a}
-tbody tr:hover .folder{color:var(--cyan);text-shadow:0 0 12px #5ef6ff88}
-.folder{font-weight:600;transition:.2s}
-.codecs{font-family:'JetBrains Mono',monospace;color:var(--dim)}
-.method{color:var(--cyan)}
-.why{white-space:normal;max-width:320px;color:var(--dim)}
-.save{color:var(--green);font-weight:700}
-.grow{color:var(--red);font-weight:700}
-.badge{background:linear-gradient(92deg,var(--cyan),var(--purple));color:#0d0e1a;border-radius:6px;
-  padding:2px 7px;font-weight:700;font-size:11px;box-shadow:0 0 12px #5ef6ff55}
-/* saving meter */
-.meter{display:inline-block;vertical-align:middle;width:54px;height:6px;border-radius:6px;background:#ffffff14;
-  margin-right:8px;overflow:hidden}
-.meter>span{display:block;height:100%;border-radius:6px;width:0;
-  background:linear-gradient(92deg,var(--green),var(--cyan));box-shadow:0 0 10px var(--green);
-  animation:fill 1.1s cubic-bezier(.2,.8,.2,1) both .3s}
-@keyframes fill{from{width:0}}
-tfoot td{padding:14px;background:#1d2040;font-weight:700;border-top:2px solid var(--purple)}
-.glow-sm{background:linear-gradient(92deg,var(--pink),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
-footer{text-align:center;color:var(--dim);margin-top:22px;font-size:12px}
-@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+tbody td,tfoot td{padding:5px 8px;border-bottom:1px solid var(--line);
+  vertical-align:top;overflow:hidden;text-overflow:ellipsis}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.codecs,.why{white-space:normal;word-break:break-word;color:var(--mid)}
+.folder{color:var(--bright);font-weight:700;white-space:normal;word-break:break-word}
+.method{color:var(--amber)}
+.work{color:var(--mid)}
+.k4{color:var(--bg);background:var(--amber);padding:0 4px;border-radius:2px;font-size:10px;font-weight:700}
+.save{color:var(--bright)}
+.meter{font-family:inherit;letter-spacing:-1px}
+/* savings tiers: yellow -> blue -> green, red if it grows */
+.t-low,.t-low .meter{color:var(--amber)}
+.t-mid,.t-mid .meter{color:var(--blue)}
+.t-high,.t-high .meter{color:var(--fg)}
+.t-grow,.t-grow .meter{color:var(--red)}
+.bytes{color:var(--dim)}
+/* work column */
+.work{color:var(--mid);font-size:11px;line-height:1.35}
+.we{color:var(--amber);font-weight:700}
+.wa{color:var(--blue);font-weight:700}
+.wk{color:var(--fg);font-weight:700}
+.legend{margin-top:12px;color:var(--mid);font-size:11px}
+.legend b{color:var(--bright);font-weight:700}
+.legend .we,.legend .wa,.legend .wk,.legend .t-low,.legend .t-mid,.legend .t-high,.legend .t-grow{font-weight:700}
+tbody tr:hover td{background:#0f1f14}
+tbody tr:hover .folder{color:var(--bg);background:var(--fg)}
+tfoot td{border-top:1px solid var(--fg);border-bottom:0;color:var(--bright);font-weight:700;padding-top:8px}
+.done{margin-top:16px;color:var(--dim);font-size:12px}
+@media (prefers-reduced-motion:reduce){.cur{animation:none}}
+/* fluid type as it widens */
+@media (min-width:1500px){table{font-size:13px}.body{padding:20px 24px 26px}}
+/* collapse table into stacked cards on narrow screens */
+@media (max-width:760px){
+  .summary{font-size:11px}
+  table,thead,tbody,tfoot,tr,td{display:block;width:auto}
+  colgroup{display:none}
+  thead{position:absolute;left:-9999px}
+  tr{border:1px solid var(--line);border-radius:4px;margin-bottom:10px;padding:4px 2px;background:#0a0d0a}
+  tbody tr:hover td{background:none}
+  td{display:flex;justify-content:space-between;gap:12px;text-align:right!important;
+     border-bottom:1px dashed var(--line);padding:5px 10px;overflow:visible}
+  td:last-child{border-bottom:0}
+  td::before{content:attr(data-l);color:var(--amber);text-transform:uppercase;
+     font-size:10px;letter-spacing:.5px;text-align:left;opacity:.8}
+  .folder,.codecs,.why{white-space:normal;word-break:break-word;text-align:right}
+  tbody tr:hover .folder{background:none;color:var(--bright)}
+  tfoot tr{border-top:1px solid var(--fg)}
+}
 </style>`

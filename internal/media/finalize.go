@@ -40,31 +40,38 @@ func backupPath(in string) string {
 
 // Finalize moves a finished temp encode to its final location.
 //
-// replace=false: rename temp → "<name> (plexprep).mkv". Source untouched.
+// replace=false: rename temp → "<name> (plexprep).mkv".
 //
-// replace=true: rename source → "<name>.original" (kept as backup), then
-// rename temp → "<name>.mkv". The source is preserved, not deleted, so the
-// result can be eyeballed before the backups are purged.
-func Finalize(in, tmp string, replace bool) (string, error) {
+// replace=true: the output takes the source's name (as .mkv). The source is
+// first renamed to "<name>.original" (so the swap is atomic and reversible).
+//
+// purge: delete the source immediately after the output is safely in place,
+// freeing its space mid-batch instead of keeping a backup. Irreversible. The
+// source is only ever removed once the new file exists, never before.
+func Finalize(in, tmp string, replace, purge bool) (string, error) {
 	final := FinalPath(in, replace)
 
 	if !replace {
 		if err := os.Rename(tmp, final); err != nil {
 			return "", err
 		}
+		if purge {
+			_ = os.Remove(in) // output is a sibling; drop the original
+		}
 		return final, nil
 	}
 
-	// Back up the source first.
+	// Move the source aside first so the swap is reversible on failure.
 	bak := backupPath(in)
 	if err := os.Rename(in, bak); err != nil {
 		return "", fmt.Errorf("backup source: %w", err)
 	}
-	// Swap the encode into the source's name.
 	if err := os.Rename(tmp, final); err != nil {
-		// Roll back the backup so nothing is lost.
-		_ = os.Rename(bak, in)
+		_ = os.Rename(bak, in) // roll back, nothing lost
 		return "", fmt.Errorf("place output: %w", err)
+	}
+	if purge {
+		_ = os.Remove(bak) // new file is in place; drop the backup now
 	}
 	return final, nil
 }

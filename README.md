@@ -39,10 +39,16 @@ as `… (plexprep).mkv` and originals are untouched.
 
 Press `r` on the review screen (or pass `--replace` headlessly) to make each
 output **take the source's name** (as `.mkv`). The source is renamed to
-`<name>.original` as a backup — it is never deleted, so you can eyeball the
-result and purge the `.original` files yourself once happy. The encode is
-written to a temp file and swapped in only on success, so a cancel or failure
-never destroys the source.
+`<name>.original` as a backup. The encode is written to a temp file and swapped
+in only on success, so a cancel or failure never destroys the source.
+
+### Optional delete-after-convert
+
+Press `d` (or pass `--delete`) to **remove each original the moment its
+conversion succeeds**, freeing disk space as the batch runs instead of letting
+backups pile up to the end. Irreversible — the source is only ever removed once
+the new file is safely in place. Combine with `--replace` to convert in place
+with no leftover backups.
 
 The interactive flow opens with an **Analysis** screen: recommended method,
 total space savings, and an estimated encode time — accept it (Enter) or pick a
