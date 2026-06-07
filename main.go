@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"plexprep/internal/media"
 	"plexprep/internal/ui"
@@ -48,50 +49,50 @@ func main() {
 		}
 	}
 
-	// Headless: plexprep --analyze <folder>
-	if len(os.Args) > 2 && os.Args[1] == "--analyze" {
-		if err := ui.AnalyzeReport(os.Args[2]); err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
-		}
-		return
-	}
-
-	// Headless: plexprep --dry|--run <folder> [profile] [--replace]
-	if len(os.Args) > 2 && (os.Args[1] == "--dry" || os.Args[1] == "--run") {
-		prof := media.ProfileZeroTranscode
-		replace := false
-		for _, a := range os.Args[3:] {
-			switch a {
-			case "4k":
-				prof = media.Profile4K
-			case "audio":
-				prof = media.ProfileAudioOnly
-			case "--replace":
-				replace = true
+	// Headless modes: flags and the folder may appear in any order.
+	if len(os.Args) > 1 {
+		mode := os.Args[1]
+		if mode == "--analyze" || mode == "--dry" || mode == "--run" {
+			prof := media.ProfileZeroTranscode
+			replace := false
+			folder := ""
+			for _, a := range os.Args[2:] {
+				switch a {
+				case "4k":
+					prof = media.Profile4K
+				case "audio":
+					prof = media.ProfileAudioOnly
+				case "--replace":
+					replace = true
+				default:
+					if folder == "" && !strings.HasPrefix(a, "--") {
+						folder = a
+					}
+				}
 			}
+			if folder == "" {
+				fmt.Fprintf(os.Stderr, "error: %s needs a folder\n\n%s", mode, usage)
+				os.Exit(2)
+			}
+			var err error
+			switch mode {
+			case "--analyze":
+				err = ui.AnalyzeReport(folder)
+			case "--dry":
+				err = ui.DryRun(folder, prof)
+			case "--run":
+				err = ui.RunHeadless(folder, prof, replace)
+			}
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "error:", err)
+				os.Exit(1)
+			}
+			return
 		}
-		var err error
-		if os.Args[1] == "--dry" {
-			err = ui.DryRun(os.Args[2], prof)
-		} else {
-			err = ui.RunHeadless(os.Args[2], prof, replace)
-		}
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
-		}
-		return
 	}
 
 	start := ""
 	if len(os.Args) > 1 {
-		// A known flag reaching here means its <folder> argument was missing.
-		switch os.Args[1] {
-		case "--analyze", "--dry", "--run":
-			fmt.Fprintf(os.Stderr, "error: %s needs a folder\n\n%s", os.Args[1], usage)
-			os.Exit(2)
-		}
 		start = os.Args[1]
 	}
 

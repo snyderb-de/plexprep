@@ -19,6 +19,10 @@ func RunHeadless(root string, profile media.Profile, replace bool) error {
 	if err != nil {
 		return err
 	}
+	if len(paths) == 0 {
+		fmt.Printf("No video files found under %s\n", root)
+		return nil
+	}
 	ctx := context.Background()
 	var savedTot int64
 	var ok, fail int
