@@ -28,6 +28,15 @@ carrying the `.mkv` extension, which ffprobe rejects with
 - [ ] Confirm remaining failures aren't `ffprobe` timeouts or long/UNC Windows
       paths; add a timeout + clearer handling.
 
+## HTML report — sortable columns
+
+- [ ] Make the `--report` HTML table columns click-to-sort (folder, files,
+      size, est, saved %, time, etc.), ascending/descending. Numeric columns
+      must sort by underlying value, not the human-readable string ("9.14 MB"
+      vs "1.39 GB") — emit a `data-sort` attribute with raw bytes/seconds and
+      sort on that. Keep it dependency-free (small inline JS) to match the
+      single-file, no-build report.
+
 ## Linux / macOS support
 plexprep is currently developed and tested on Windows only. Port + verify on Unix:
 
