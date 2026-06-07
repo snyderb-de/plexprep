@@ -91,13 +91,19 @@ func (r Report) SavedPct() float64 {
 	return float64(r.SavedBytes()) / float64(r.OrigBytes) * 100
 }
 
-// Analyze probes a folder, recommends a profile, and totals savings + time.
+// Analyze probes a folder recursively, recommends a profile, and totals
+// savings + time.
 func Analyze(root string) (*Report, error) {
 	paths, err := FindVideos(root)
 	if err != nil {
 		return nil, err
 	}
-	r := &Report{Root: root, Codecs: map[string]int{}}
+	return AnalyzePaths(root, paths), nil
+}
+
+// AnalyzePaths analyzes a fixed set of files (already discovered) under a label.
+func AnalyzePaths(label string, paths []string) *Report {
+	r := &Report{Root: label, Codecs: map[string]int{}}
 
 	// First pass: probe everything, learn the content mix.
 	infos := make([]*MediaInfo, 0, len(paths))
@@ -124,7 +130,7 @@ func Analyze(root string) (*Report, error) {
 	}
 	if r.Files == 0 {
 		r.Why = "no readable video files found"
-		return r, nil
+		return r
 	}
 
 	// Recommend a profile from the content mix.
@@ -156,7 +162,7 @@ func Analyze(root string) (*Report, error) {
 			r.AudioOnly++
 		}
 	}
-	return r, nil
+	return r
 }
 
 // CodecSummary renders the source-codec histogram, busiest first.

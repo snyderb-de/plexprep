@@ -2,6 +2,7 @@ package media
 
 import (
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -52,6 +53,34 @@ func FindVideos(root string) ([]string, error) {
 	})
 	sort.Strings(out)
 	return out, err
+}
+
+// FindVideosTop returns video files directly inside root (non-recursive),
+// skipping dotfiles and our own outputs. Used for the report's "(root)" row.
+func FindVideosTop(root string) ([]string, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		base := e.Name()
+		if strings.HasPrefix(base, ".") {
+			continue
+		}
+		if !videoExts[strings.ToLower(filepath.Ext(base))] {
+			continue
+		}
+		if strings.Contains(base, "(plexprep)") {
+			continue
+		}
+		out = append(out, filepath.Join(root, base))
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // BuildItem probes a path and plans it under profile.

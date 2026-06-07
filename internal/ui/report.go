@@ -42,7 +42,14 @@ func ReportFolders(root, out string) error {
 
 	banner(fmt.Sprintf(`--report "%s"`, root))
 
-	rows := make([]folderRow, 0, len(subs))
+	rows := make([]folderRow, 0, len(subs)+1)
+
+	// "(root)" row: videos sitting directly in root (non-recursive, so they
+	// don't double-count with the subfolder rows).
+	if top, err := media.FindVideosTop(root); err == nil && len(top) > 0 {
+		rows = append(rows, folderRow{Name: "(root)", Report: media.AnalyzePaths(root, top)})
+	}
+
 	for i, sub := range subs {
 		fmt.Printf("\r  %s %s %s", style.Amber.S("▸"),
 			style.Mid.S(fmt.Sprintf("[%d/%d]", i+1, len(subs))),
