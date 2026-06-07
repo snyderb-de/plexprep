@@ -30,12 +30,9 @@ carrying the `.mkv` extension, which ffprobe rejects with
 
 ## HTML report — sortable columns
 
-- [ ] Make the `--report` HTML table columns click-to-sort (folder, files,
-      size, est, saved %, time, etc.), ascending/descending. Numeric columns
-      must sort by underlying value, not the human-readable string ("9.14 MB"
-      vs "1.39 GB") — emit a `data-sort` attribute with raw bytes/seconds and
-      sort on that. Keep it dependency-free (small inline JS) to match the
-      single-file, no-build report.
+- [x] Click-to-sort columns (asc/desc, arrow indicator). Numeric columns sort
+      by raw `data-sort` value (bytes/seconds), not the human string.
+      Dependency-free inline JS in `internal/ui/report.go` (sortJS).
 
 ## Linux / macOS support
 plexprep is currently developed and tested on Windows only. Port + verify on Unix:

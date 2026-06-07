@@ -293,15 +293,15 @@ func writeHTML(path, root string, rows []folderRow) error {
 
 		b.WriteString("<tr>")
 		fmt.Fprintf(&b, `<td class="folder" data-l="folder">%s%s</td>`, html.EscapeString(row.Name), k4)
-		fmt.Fprintf(&b, `<td class="num" data-l="files">%d</td>`, rp.Files)
+		fmt.Fprintf(&b, `<td class="num" data-l="files" data-sort="%d">%d</td>`, rp.Files, rp.Files)
 		fmt.Fprintf(&b, `<td class="codecs" data-l="codecs">%s</td>`, html.EscapeString(rp.CodecSummary()))
 		fmt.Fprintf(&b, `<td class="method" data-l="method">%s</td>`, html.EscapeString(methodTag(rp.Recommended)))
-		fmt.Fprintf(&b, `<td class="num" data-l="size">%s</td>`, media.HumanBytes(rp.OrigBytes))
-		fmt.Fprintf(&b, `<td class="num" data-l="→ est">%s</td>`, media.HumanBytes(rp.ProjBytes))
-		fmt.Fprintf(&b, `<td class="%s" data-l="saved">%s</td>`,
-			saveTier(rp.SavedBytes(), rp.SavedPct()), savedCell(rp.SavedBytes(), rp.SavedPct()))
-		fmt.Fprintf(&b, `<td class="num" data-l="time">%s</td>`, media.HumanDuration(rp.EstSecs))
-		fmt.Fprintf(&b, `<td class="work" data-l="work">%s</td>`, work)
+		fmt.Fprintf(&b, `<td class="num" data-l="size" data-sort="%d">%s</td>`, rp.OrigBytes, media.HumanBytes(rp.OrigBytes))
+		fmt.Fprintf(&b, `<td class="num" data-l="→ est" data-sort="%d">%s</td>`, rp.ProjBytes, media.HumanBytes(rp.ProjBytes))
+		fmt.Fprintf(&b, `<td class="%s" data-l="saved" data-sort="%d">%s</td>`,
+			saveTier(rp.SavedBytes(), rp.SavedPct()), rp.SavedBytes(), savedCell(rp.SavedBytes(), rp.SavedPct()))
+		fmt.Fprintf(&b, `<td class="num" data-l="time" data-sort="%.0f">%s</td>`, rp.EstSecs, media.HumanDuration(rp.EstSecs))
+		fmt.Fprintf(&b, `<td class="work" data-l="work" data-sort="%d">%s</td>`, rp.ReencodeCount, work)
 		fmt.Fprintf(&b, `<td class="why" data-l="why">%s</td>`, html.EscapeString(rp.Why))
 		b.WriteString("</tr>")
 	}
@@ -316,11 +316,35 @@ func writeHTML(path, root string, rows []folderRow) error {
 	b.WriteString(`<div class="legend">` +
 		`<b>work</b> &mdash; <span class="we">re-encode</span> video · <span class="wa">add-AAC</span> only · <span class="wk">keep</span> as-is` +
 		` &nbsp;&nbsp;|&nbsp;&nbsp; <b>bar</b> &mdash; <span class="t-low">low</span> → <span class="t-mid">mid</span> → <span class="t-high">high</span> savings · <span class="t-grow">▲ larger</span></div>`)
-	b.WriteString(`<div class="done">// estimates only · copies are near-instant&nbsp;<span class="cur"></span></div>`)
-	b.WriteString(`</div></div></main></body></html>`)
+	b.WriteString(`<div class="done">// estimates only · copies are near-instant · click a column to sort&nbsp;<span class="cur"></span></div>`)
+	b.WriteString(`</div></div></main>`)
+	b.WriteString(sortJS)
+	b.WriteString(`</body></html>`)
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }
+
+// sortJS adds dependency-free click-to-sort. Numeric columns sort by their
+// data-sort raw value (bytes/seconds), text columns by visible text.
+const sortJS = `<script>
+(function(){
+ var t=document.querySelector('table'); if(!t||!t.tHead) return;
+ var tb=t.tBodies[0], ths=t.tHead.rows[0].cells, dir=[];
+ function key(c){var d=c.getAttribute('data-sort'); if(d!==null){var n=parseFloat(d); return isNaN(n)?d:n;} return c.textContent.trim().toLowerCase();}
+ for(var i=0;i<ths.length;i++) ths[i].setAttribute('data-base', ths[i].textContent);
+ function draw(active){for(var j=0;j<ths.length;j++){var base=ths[j].getAttribute('data-base'); ths[j].textContent = base + (j===active ? (dir[j]?' ▲':' ▼') : '');}}
+ for(var i=0;i<ths.length;i++){(function(i){
+   ths[i].style.cursor='pointer'; ths[i].style.userSelect='none';
+   ths[i].addEventListener('click',function(){
+     dir[i] = !dir[i]; var asc = dir[i];
+     var rows=[].slice.call(tb.rows);
+     rows.sort(function(a,b){var x=key(a.cells[i]),y=key(b.cells[i]); if(x<y)return asc?-1:1; if(x>y)return asc?1:-1; return 0;});
+     rows.forEach(function(r){tb.appendChild(r);});
+     draw(i);
+   });
+ })(i);}
+})();
+</script>`
 
 const reportCSS = `<style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
@@ -357,6 +381,7 @@ table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px}
 thead th{text-align:left;padding:5px 8px;color:var(--bg);background:var(--fg);
   text-transform:uppercase;letter-spacing:.5px;font-weight:700;border:1px solid var(--bg)}
 th.num{text-align:right}
+thead th:hover{background:var(--bright)}
 tbody td,tfoot td{padding:5px 8px;border-bottom:1px solid var(--line);
   vertical-align:top;overflow:hidden;text-overflow:ellipsis}
 td.num{text-align:right;font-variant-numeric:tabular-nums}
