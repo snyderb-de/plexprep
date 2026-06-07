@@ -21,6 +21,7 @@ USAGE
   plexprep [folder]                 launch the interactive TUI
                                     (opens on an analysis of [folder] if given)
   plexprep --analyze <folder>       recommend a method + savings + time estimate
+  plexprep --report  <root> [out]   analyze each 1st-level subfolder → .xlsx + .html
   plexprep --dry     <folder> [p]            per-file preview table, no encoding
   plexprep --run     <folder> [p] [--replace] convert headlessly, plain progress
   plexprep --help | -h                       show this help
@@ -47,6 +48,30 @@ func main() {
 			fmt.Print(usage)
 			return
 		}
+	}
+
+	// Headless folder report: plexprep --report <root> [output-basename]
+	if len(os.Args) > 1 && os.Args[1] == "--report" {
+		root, out := "", ""
+		for _, a := range os.Args[2:] {
+			if strings.HasPrefix(a, "--") {
+				continue
+			}
+			if root == "" {
+				root = a
+			} else if out == "" {
+				out = a
+			}
+		}
+		if root == "" {
+			fmt.Fprintf(os.Stderr, "error: --report needs a root folder\n\n%s", usage)
+			os.Exit(2)
+		}
+		if err := ui.ReportFolders(root, out); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	// Headless modes: flags and the folder may appear in any order.

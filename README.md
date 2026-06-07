@@ -52,10 +52,20 @@ Headless (scripting / no TTY):
 
 ```
 plexprep.exe --analyze "Z:\path"           # recommend method + savings + time estimate
+plexprep.exe --report "Z:\library" [out]   # per-subfolder summary → .xlsx + .html
 plexprep.exe --dry "Z:\path" [4k|audio]    # per-file preview, no encoding
 plexprep.exe --run "Z:\path" [4k|audio]    # convert, plain-text progress
 plexprep.exe --run "Z:\path" --replace     # convert in place (source → .original)
 ```
+
+### Folder report (`--report`)
+
+Point it at a library root; it analyzes every 1st-level subfolder (recursing
+through all their content) and writes a one-row-per-subfolder summary as both
+`plexprep-report.xlsx` and `plexprep-report.html` (a glowing, animated dashboard
+with per-folder recommended method, space savings, and estimated encode time).
+Files sitting loose in the root are ignored. Pass an optional 2nd argument to
+choose the output basename/location.
 
 ## Build
 
