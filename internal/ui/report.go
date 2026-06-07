@@ -44,9 +44,9 @@ func ReportFolders(root, out string) error {
 
 	rows := make([]folderRow, 0, len(subs))
 	for i, sub := range subs {
-		fmt.Printf("\r  %s %s %s   ", style.Amber.S("▸"),
+		fmt.Printf("\r  %s %s %s", style.Amber.S("▸"),
 			style.Mid.S(fmt.Sprintf("[%d/%d]", i+1, len(subs))),
-			style.Bright.S(style.Trunc(filepath.Base(sub), 50)))
+			style.Pad(style.Bright.S(style.Trunc(filepath.Base(sub), 50)), 52))
 		rep, err := media.Analyze(sub)
 		if err != nil {
 			continue
