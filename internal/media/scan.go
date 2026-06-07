@@ -33,11 +33,18 @@ func FindVideos(root string) ([]string, error) {
 		if d.IsDir() {
 			return nil
 		}
+		base := filepath.Base(path)
+		// Skip dotfiles and macOS AppleDouble sidecars ("._Movie.mkv"): they
+		// carry video extensions on non-Mac drives but are tiny junk that
+		// ffprobe can't read.
+		if strings.HasPrefix(base, ".") {
+			return nil
+		}
 		ext := strings.ToLower(filepath.Ext(path))
 		if !videoExts[ext] {
 			return nil
 		}
-		if strings.Contains(filepath.Base(path), "(plexprep)") {
+		if strings.Contains(base, "(plexprep)") {
 			return nil
 		}
 		out = append(out, path)
