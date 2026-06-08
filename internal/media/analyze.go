@@ -2,6 +2,7 @@ package media
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,6 +63,30 @@ func EstEncodeSeconds(mi *MediaInfo, p Plan) float64 {
 	return secs
 }
 
+// FileDetail is one file's analysis under the folder's recommended profile,
+// used to render the report drill-down page.
+type FileDetail struct {
+	Name      string
+	Codec     string
+	Width     int
+	Height    int
+	Is4K      bool
+	OrigBytes int64
+	ProjBytes int64
+	EstSecs   float64
+	Action    string // "re-encode" / "add-AAC" / "keep"
+	Method    string // libx264 / libx265 / copy
+	Why       string
+}
+
+func (d FileDetail) SavedBytes() int64 { return d.OrigBytes - d.ProjBytes }
+func (d FileDetail) SavedPct() float64 {
+	if d.OrigBytes == 0 {
+		return 0
+	}
+	return float64(d.SavedBytes()) / float64(d.OrigBytes) * 100
+}
+
 // Report is the folder-level analysis.
 type Report struct {
 	Root        string
@@ -80,7 +105,8 @@ type Report struct {
 	NoOp          int
 	Files4K       int
 
-	Codecs map[string]int // source video codec -> count
+	Codecs  map[string]int // source video codec -> count
+	Details []FileDetail   // per-file breakdown (report drill-down)
 }
 
 func (r Report) SavedBytes() int64 { return r.OrigBytes - r.ProjBytes }
@@ -150,17 +176,40 @@ func AnalyzePaths(label string, paths []string) *Report {
 	// Second pass: total savings + time under the recommended profile.
 	for _, mi := range infos {
 		plan := BuildPlan(mi, r.Recommended)
+		secs := EstEncodeSeconds(mi, plan)
 		r.OrigBytes += mi.SizeBytes
 		r.ProjBytes += plan.ProjectedBytes
-		r.EstSecs += EstEncodeSeconds(mi, plan)
+		r.EstSecs += secs
+
+		action := "add-AAC"
 		switch {
 		case plan.NoOp():
 			r.NoOp++
+			action = "keep"
 		case plan.ReencodeVideo:
 			r.ReencodeCount++
+			action = "re-encode"
 		default:
 			r.AudioOnly++
 		}
+
+		method := "copy"
+		if plan.TargetCodec != "" {
+			method = plan.TargetCodec
+		}
+		r.Details = append(r.Details, FileDetail{
+			Name:      filepath.Base(mi.Path),
+			Codec:     mi.Video.CodecName,
+			Width:     mi.Video.Width,
+			Height:    mi.Video.Height,
+			Is4K:      mi.is4K(),
+			OrigBytes: mi.SizeBytes,
+			ProjBytes: plan.ProjectedBytes,
+			EstSecs:   secs,
+			Action:    action,
+			Method:    method,
+			Why:       strings.Join(plan.Reasons, " · "),
+		})
 	}
 	return r
 }

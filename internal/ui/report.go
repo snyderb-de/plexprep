@@ -254,6 +254,7 @@ func writeHTML(path, root string, rows []folderRow) error {
 
 	// Prompt + summary readout
 	b.WriteString(`<div class="body">`)
+	b.WriteString(`<div class="view" id="v-summary">`)
 	fmt.Fprintf(&b, `<div class="prompt"><span class="usr">bag@plexprep</span>:<span class="pwd">~</span>$ plexprep --report %s<span class="cur"></span></div>`,
 		html.EscapeString(root))
 
@@ -288,7 +289,7 @@ func writeHTML(path, root string, rows []folderRow) error {
 	}
 	b.WriteString("</tr></thead><tbody>")
 
-	for _, row := range rows {
+	for i, row := range rows {
 		rp := row.Report
 		k4 := ""
 		if rp.Files4K > 0 {
@@ -299,7 +300,8 @@ func writeHTML(path, root string, rows []folderRow) error {
 			rp.ReencodeCount, rp.AudioOnly, rp.NoOp)
 
 		b.WriteString("<tr>")
-		fmt.Fprintf(&b, `<td class="folder" data-l="folder">%s%s</td>`, html.EscapeString(row.Name), k4)
+		name := fmt.Sprintf(`<a class="flink" href="#" data-go="v-%d">%s</a>`, i, html.EscapeString(row.Name))
+		fmt.Fprintf(&b, `<td class="folder" data-l="folder">%s%s</td>`, name, k4)
 		fmt.Fprintf(&b, `<td class="num" data-l="files" data-sort="%d">%d</td>`, rp.Files, rp.Files)
 		fmt.Fprintf(&b, `<td class="codecs" data-l="codecs">%s</td>`, html.EscapeString(rp.CodecSummary()))
 		fmt.Fprintf(&b, `<td class="method" data-l="method">%s</td>`, html.EscapeString(methodTag(rp.Recommended)))
@@ -323,33 +325,135 @@ func writeHTML(path, root string, rows []folderRow) error {
 	b.WriteString(`<div class="legend">` +
 		`<b>work</b> &mdash; <span class="we">re-encode</span> video · <span class="wa">add-AAC</span> only · <span class="wk">keep</span> as-is` +
 		` &nbsp;&nbsp;|&nbsp;&nbsp; <b>bar</b> &mdash; <span class="t-low">low</span> → <span class="t-mid">mid</span> → <span class="t-high">high</span> savings · <span class="t-grow">▲ larger</span></div>`)
-	b.WriteString(`<div class="done">// estimates only · copies are near-instant · click a column to sort&nbsp;<span class="cur"></span></div>`)
+	b.WriteString(`<div class="done">// estimates only · copies are near-instant · click a folder to drill in, a column to sort&nbsp;<span class="cur"></span></div>`)
+	b.WriteString(`</div>`) // /v-summary
+
+	// One hidden drill-down panel per folder (single-file, JS toggles view).
+	for i, row := range rows {
+		detailPanel(&b, i, row)
+	}
+
 	b.WriteString(`</div></div></main>`)
+	b.WriteString(drillJS)
 	b.WriteString(sortJS)
 	b.WriteString(`</body></html>`)
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }
 
-// sortJS adds dependency-free click-to-sort. Numeric columns sort by their
-// data-sort raw value (bytes/seconds), text columns by visible text.
+// detailPanel writes one folder's hidden per-file view into b.
+func detailPanel(b *strings.Builder, idx int, row folderRow) {
+	rp := row.Report
+	fmt.Fprintf(b, `<div class="view" id="v-%d" hidden>`, idx)
+
+	fmt.Fprintf(b, `<div class="prompt"><span class="usr">bag@plexprep</span>:<span class="pwd">~</span>$ plexprep --analyze %s<span class="cur"></span></div>`,
+		html.EscapeString(row.Name))
+	b.WriteString(`<div class="done"><a class="flink" href="#" data-go="v-summary">&larr; back to folder report</a></div>`)
+
+	fmt.Fprintf(b, `<pre class="summary">┌─ %s ─┐
+ files     : %d   (%d re-encode · %d add-AAC · %d keep)
+ method    : %s
+ size      : %s  ->  %s
+ reclaim   : <span class="save">%s</span>  <span class="save">(%.0f%%)</span>
+ est. time : ~%s
+ why       : %s
+└─┘</pre>`,
+		html.EscapeString(strings.ToUpper(row.Name)),
+		rp.Files, rp.ReencodeCount, rp.AudioOnly, rp.NoOp,
+		html.EscapeString(rp.Recommended.String()),
+		media.HumanBytes(rp.OrigBytes), media.HumanBytes(rp.ProjBytes),
+		media.HumanBytes(rp.SavedBytes()), rp.SavedPct(),
+		media.HumanDuration(rp.EstSecs), html.EscapeString(rp.Why))
+
+	cols := []string{"file", "codec", "res", "size", "→ est", "saved", "time", "work", "why"}
+	widths := []string{"24%", "8%", "8%", "8%", "8%", "16%", "6%", "8%", "14%"}
+	b.WriteString(`<table><colgroup>`)
+	for _, w := range widths {
+		fmt.Fprintf(b, `<col style="width:%s">`, w)
+	}
+	b.WriteString(`</colgroup><thead><tr>`)
+	numCols := map[int]bool{3: true, 4: true, 5: true, 6: true}
+	for i, h := range cols {
+		cls := ""
+		if numCols[i] {
+			cls = ` class="num"`
+		}
+		fmt.Fprintf(b, "<th%s>%s</th>", cls, html.EscapeString(h))
+	}
+	b.WriteString("</tr></thead><tbody>")
+
+	for _, d := range rp.Details {
+		k4 := ""
+		if d.Is4K {
+			k4 = ` <span class="k4">4K</span>`
+		}
+		res := fmt.Sprintf("%d×%d", d.Width, d.Height)
+		actCls := "wk"
+		switch d.Action {
+		case "re-encode":
+			actCls = "we"
+		case "add-AAC":
+			actCls = "wa"
+		}
+		b.WriteString("<tr>")
+		fmt.Fprintf(b, `<td class="folder" data-l="file">%s%s</td>`, html.EscapeString(d.Name), k4)
+		fmt.Fprintf(b, `<td class="codecs" data-l="codec">%s</td>`, html.EscapeString(d.Codec))
+		fmt.Fprintf(b, `<td class="num" data-l="res" data-sort="%d">%s</td>`, d.Width*d.Height, res)
+		fmt.Fprintf(b, `<td class="num" data-l="size" data-sort="%d">%s</td>`, d.OrigBytes, media.HumanBytes(d.OrigBytes))
+		fmt.Fprintf(b, `<td class="num" data-l="→ est" data-sort="%d">%s</td>`, d.ProjBytes, media.HumanBytes(d.ProjBytes))
+		fmt.Fprintf(b, `<td class="%s" data-l="saved" data-sort="%d">%s</td>`,
+			saveTier(d.SavedBytes(), d.SavedPct()), d.SavedBytes(), savedCell(d.SavedBytes(), d.SavedPct()))
+		fmt.Fprintf(b, `<td class="num" data-l="time" data-sort="%.0f">%s</td>`, d.EstSecs, media.HumanDuration(d.EstSecs))
+		fmt.Fprintf(b, `<td class="work" data-l="work" data-sort="%q"><span class="%s">%s</span></td>`,
+			d.Action, actCls, html.EscapeString(d.Action))
+		fmt.Fprintf(b, `<td class="why" data-l="why">%s</td>`, html.EscapeString(d.Why))
+		b.WriteString("</tr>")
+	}
+	if len(rp.Details) == 0 {
+		b.WriteString(`<tr><td colspan="9" class="muted">no readable video files</td></tr>`)
+	}
+	b.WriteString("</tbody></table>")
+	b.WriteString(`</div>`) // /v-N
+}
+
+// drillJS toggles between the summary view and a folder's detail panel.
+// Single-file: every panel ships in the page, only one is shown at a time.
+const drillJS = `<script>
+(function(){
+ function show(id){
+   var vs=document.querySelectorAll('.view');
+   for(var i=0;i<vs.length;i++) vs[i].hidden = (vs[i].id!==id);
+   window.scrollTo(0,0);
+ }
+ document.addEventListener('click',function(e){
+   var a=e.target.closest('[data-go]'); if(!a) return;
+   e.preventDefault(); show(a.getAttribute('data-go'));
+ });
+})();
+</script>`
+
+// sortJS adds dependency-free click-to-sort to every table on the page.
+// Numeric columns sort by their data-sort raw value, text by visible text.
 const sortJS = `<script>
 (function(){
- var t=document.querySelector('table'); if(!t||!t.tHead) return;
- var tb=t.tBodies[0], ths=t.tHead.rows[0].cells, dir=[];
+ var tables=document.querySelectorAll('table');
  function key(c){var d=c.getAttribute('data-sort'); if(d!==null){var n=parseFloat(d); return isNaN(n)?d:n;} return c.textContent.trim().toLowerCase();}
- for(var i=0;i<ths.length;i++) ths[i].setAttribute('data-base', ths[i].textContent);
- function draw(active){for(var j=0;j<ths.length;j++){var base=ths[j].getAttribute('data-base'); ths[j].textContent = base + (j===active ? (dir[j]?' ▲':' ▼') : '');}}
- for(var i=0;i<ths.length;i++){(function(i){
-   ths[i].style.cursor='pointer'; ths[i].style.userSelect='none';
-   ths[i].addEventListener('click',function(){
-     dir[i] = !dir[i]; var asc = dir[i];
-     var rows=[].slice.call(tb.rows);
-     rows.sort(function(a,b){var x=key(a.cells[i]),y=key(b.cells[i]); if(x<y)return asc?-1:1; if(x>y)return asc?1:-1; return 0;});
-     rows.forEach(function(r){tb.appendChild(r);});
-     draw(i);
-   });
- })(i);}
+ for(var ti=0;ti<tables.length;ti++){(function(t){
+   if(!t.tHead) return;
+   var tb=t.tBodies[0], ths=t.tHead.rows[0].cells, dir=[];
+   for(var i=0;i<ths.length;i++) ths[i].setAttribute('data-base', ths[i].textContent);
+   function draw(active){for(var j=0;j<ths.length;j++){var base=ths[j].getAttribute('data-base'); ths[j].textContent = base + (j===active ? (dir[j]?' ▲':' ▼') : '');}}
+   for(var i=0;i<ths.length;i++){(function(i){
+     ths[i].style.cursor='pointer'; ths[i].style.userSelect='none';
+     ths[i].addEventListener('click',function(){
+       dir[i] = !dir[i]; var asc = dir[i];
+       var rows=[].slice.call(tb.rows);
+       rows.sort(function(a,b){var x=key(a.cells[i]),y=key(b.cells[i]); if(x<y)return asc?-1:1; if(x>y)return asc?1:-1; return 0;});
+       rows.forEach(function(r){tb.appendChild(r);});
+       draw(i);
+     });
+   })(i);}
+ })(tables[ti]);}
 })();
 </script>`
 
@@ -394,6 +498,9 @@ tbody td,tfoot td{padding:5px 8px;border-bottom:1px solid var(--line);
 td.num{text-align:right;font-variant-numeric:tabular-nums}
 .codecs,.why{white-space:normal;word-break:break-word;color:var(--mid)}
 .folder{color:var(--bright);font-weight:700;white-space:normal;word-break:break-word}
+.flink{color:var(--bright);text-decoration:none;border-bottom:1px dotted var(--mid)}
+.flink:hover{color:var(--amber);border-bottom-color:var(--amber)}
+tbody tr:hover .flink{color:var(--bg)}
 .method{color:var(--amber)}
 .work{color:var(--mid)}
 .k4{color:var(--bg);background:var(--amber);padding:0 4px;border-radius:2px;font-size:10px;font-weight:700}
