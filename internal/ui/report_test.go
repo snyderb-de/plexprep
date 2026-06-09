@@ -32,8 +32,9 @@ func TestWriteHTMLDrilldown(t *testing.T) {
 	out, _ := os.ReadFile(p)
 	s := string(out)
 	for _, want := range []string{
-		`id="v-summary"`, `id="v-0" hidden`, `id="v-1" hidden`,
-		`data-go="v-0"`, `data-go="v-1"`, `data-go="v-summary"`,
+		`id="v-summary"`, `class="view" id="v-0"`, `class="view" id="v-1"`,
+		`href="#v-0"`, `href="#v-1"`, `href="#v-summary"`,
+		`.view:target{display:block}`, // pure-CSS drill-down, no JS
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("missing %q", want)

@@ -300,7 +300,7 @@ func writeHTML(path, root string, rows []folderRow) error {
 			rp.ReencodeCount, rp.AudioOnly, rp.NoOp)
 
 		b.WriteString("<tr>")
-		name := fmt.Sprintf(`<a class="flink" href="#" data-go="v-%d">%s</a>`, i, html.EscapeString(row.Name))
+		name := fmt.Sprintf(`<a class="flink" href="#v-%d">%s</a>`, i, html.EscapeString(row.Name))
 		fmt.Fprintf(&b, `<td class="folder" data-l="folder">%s%s</td>`, name, k4)
 		fmt.Fprintf(&b, `<td class="num" data-l="files" data-sort="%d">%d</td>`, rp.Files, rp.Files)
 		fmt.Fprintf(&b, `<td class="codecs" data-l="codecs">%s</td>`, html.EscapeString(rp.CodecSummary()))
@@ -334,21 +334,21 @@ func writeHTML(path, root string, rows []folderRow) error {
 	}
 
 	b.WriteString(`</div></div></main>`)
-	b.WriteString(drillJS)
 	b.WriteString(sortJS)
 	b.WriteString(`</body></html>`)
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }
 
-// detailPanel writes one folder's hidden per-file view into b.
+// detailPanel writes one folder's per-file view into b. Visibility is driven by
+// the CSS :target rule (pure-CSS drill-down, works with JS disabled).
 func detailPanel(b *strings.Builder, idx int, row folderRow) {
 	rp := row.Report
-	fmt.Fprintf(b, `<div class="view" id="v-%d" hidden>`, idx)
+	fmt.Fprintf(b, `<div class="view" id="v-%d">`, idx)
 
 	fmt.Fprintf(b, `<div class="prompt"><span class="usr">bag@plexprep</span>:<span class="pwd">~</span>$ plexprep --analyze %s<span class="cur"></span></div>`,
 		html.EscapeString(row.Name))
-	b.WriteString(`<div class="done"><a class="flink" href="#" data-go="v-summary">&larr; back to folder report</a></div>`)
+	b.WriteString(`<div class="done"><a class="flink" href="#v-summary">&larr; back to folder report</a></div>`)
 
 	fmt.Fprintf(b, `<pre class="summary">┌─ %s ─┐
  files     : %d   (%d re-encode · %d add-AAC · %d keep)
@@ -415,22 +415,6 @@ func detailPanel(b *strings.Builder, idx int, row folderRow) {
 	b.WriteString("</tbody></table>")
 	b.WriteString(`</div>`) // /v-N
 }
-
-// drillJS toggles between the summary view and a folder's detail panel.
-// Single-file: every panel ships in the page, only one is shown at a time.
-const drillJS = `<script>
-(function(){
- function show(id){
-   var vs=document.querySelectorAll('.view');
-   for(var i=0;i<vs.length;i++) vs[i].hidden = (vs[i].id!==id);
-   window.scrollTo(0,0);
- }
- document.addEventListener('click',function(e){
-   var a=e.target.closest('[data-go]'); if(!a) return;
-   e.preventDefault(); show(a.getAttribute('data-go'));
- });
-})();
-</script>`
 
 // sortJS adds dependency-free click-to-sort to every table on the page.
 // Numeric columns sort by their data-sort raw value, text by visible text.
@@ -501,6 +485,12 @@ td.num{text-align:right;font-variant-numeric:tabular-nums}
 .flink{color:var(--bright);text-decoration:none;border-bottom:1px dotted var(--mid)}
 .flink:hover{color:var(--amber);border-bottom-color:var(--amber)}
 tbody tr:hover .flink{color:var(--bg)}
+/* pure-CSS drill-down: summary shown by default, a folder's panel shown when
+   its id is the URL :target. No JavaScript required. */
+.view{display:none}
+#v-summary{display:block}
+.view:target{display:block}
+body:has(.view:target:not(#v-summary)) #v-summary{display:none}
 .method{color:var(--amber)}
 .work{color:var(--mid)}
 .k4{color:var(--bg);background:var(--amber);padding:0 4px;border-radius:2px;font-size:10px;font-weight:700}
