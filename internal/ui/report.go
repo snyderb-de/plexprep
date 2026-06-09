@@ -263,16 +263,16 @@ func writeHTML(path, root string, rows []folderRow) error {
 
 	// Prompt + summary readout
 	b.WriteString(`<div class="body">`)
-	b.WriteString(`<div class="view" id="v-summary">`)
+	b.WriteString(`<div class="view" id="v-summary" data-kind="folders">`)
 	fmt.Fprintf(&b, `<div class="prompt"><span class="usr">bag@plexprep</span>:<span class="pwd">~</span>$ plexprep --report %s<span class="cur"></span></div>`,
 		html.EscapeString(root))
 
 	fmt.Fprintf(&b, `<pre class="summary">┌─ SUMMARY ─────────────────────────────────────────────┐
  root      : %s
- scanned   : <span id="s-folders">%d</span> subfolders · <span id="s-files">%d</span> files · <span id="s-reenc">%d</span> need re-encode
- size      : <span id="s-orig">%s</span>  ->  <span id="s-proj">%s</span>
- reclaim   : <span class="save" id="s-reclaim">%s</span>  <span class="save" id="s-pct">%s</span>
- est. time : ~<span id="s-time">%s</span>   <span class="muted">(varies w/ CPU; copies instant)</span>
+ scanned   : <span class="agg-count">%d</span> subfolders · <span class="agg-files">%d</span> files · <span class="agg-reenc">%d</span> need re-encode
+ size      : <span class="agg-orig">%s</span>  ->  <span class="agg-proj">%s</span>
+ reclaim   : <span class="save agg-reclaim">%s</span>  <span class="save agg-pct">%s</span>
+ est. time : ~<span class="agg-time">%s</span>   <span class="muted">(varies w/ CPU; copies instant)</span>
  generated : %s
 └───────────────────────────────────────────────────────┘</pre>`,
 		html.EscapeString(root), len(rows), totFiles, totReenc,
@@ -281,12 +281,7 @@ func writeHTML(path, root string, rows []folderRow) error {
 		media.HumanDuration(totSecs),
 		time.Now().Format("2006-01-02 15:04:05"))
 
-	// Filter bar: hide folders by outcome; totals recompute live (see filterJS).
-	b.WriteString(`<div class="filter">filter: ` +
-		`<button class="fbtn active" data-f="all">all</button>` +
-		`<button class="fbtn" data-f="shrink">shrinks &darr;</button>` +
-		`<button class="fbtn" data-f="grow">grows &uarr;</button>` +
-		`<span class="fnote" id="s-shown"></span></div>`)
+	b.WriteString(filterBar)
 
 	// Table
 	b.WriteString(`<table><colgroup>`)
@@ -360,26 +355,34 @@ func writeHTML(path, root string, rows []folderRow) error {
 // the CSS :target rule (pure-CSS drill-down, works with JS disabled).
 func detailPanel(b *strings.Builder, idx int, row folderRow) {
 	rp := row.Report
-	fmt.Fprintf(b, `<div class="view" id="v-%d">`, idx)
+	fmt.Fprintf(b, `<div class="view" id="v-%d" data-kind="files">`, idx)
 
 	fmt.Fprintf(b, `<div class="prompt"><span class="usr">bag@plexprep</span>:<span class="pwd">~</span>$ plexprep --analyze %s<span class="cur"></span></div>`,
 		html.EscapeString(row.Name))
 	b.WriteString(`<div class="done"><a class="flink" href="#v-summary">&larr; back to folder report</a></div>`)
 
+	reclaimStr := media.HumanBytes(rp.SavedBytes())
+	pctStr := fmt.Sprintf("(%.0f%%)", rp.SavedPct())
+	if rp.SavedBytes() < 0 {
+		reclaimStr = "▲ +" + media.HumanBytes(-rp.SavedBytes()) + " larger"
+		pctStr = ""
+	}
 	fmt.Fprintf(b, `<pre class="summary">┌─ %s ─┐
- files     : %d   (%d re-encode · %d add-AAC · %d keep)
+ files     : <span class="agg-files">%d</span>   (<span class="agg-reenc">%d</span> re-encode · <span class="agg-aac">%d</span> add-AAC · <span class="agg-keep">%d</span> keep)
  method    : %s
- size      : %s  ->  %s
- reclaim   : <span class="save">%s</span>  <span class="save">(%.0f%%)</span>
- est. time : ~%s
+ size      : <span class="agg-orig">%s</span>  ->  <span class="agg-proj">%s</span>
+ reclaim   : <span class="save agg-reclaim">%s</span>  <span class="save agg-pct">%s</span>
+ est. time : ~<span class="agg-time">%s</span>
  why       : %s
 └─┘</pre>`,
 		html.EscapeString(strings.ToUpper(row.Name)),
 		rp.Files, rp.ReencodeCount, rp.AudioOnly, rp.NoOp,
 		html.EscapeString(rp.Recommended.String()),
 		media.HumanBytes(rp.OrigBytes), media.HumanBytes(rp.ProjBytes),
-		media.HumanBytes(rp.SavedBytes()), rp.SavedPct(),
+		reclaimStr, pctStr,
 		media.HumanDuration(rp.EstSecs), html.EscapeString(rp.Why))
+
+	b.WriteString(filterBar)
 
 	cols := []string{"file", "codec", "res", "size", "→ est", "saved", "time", "work", "why"}
 	widths := []string{"24%", "8%", "8%", "8%", "8%", "16%", "6%", "8%", "14%"}
@@ -420,7 +423,7 @@ func detailPanel(b *strings.Builder, idx int, row folderRow) {
 		fmt.Fprintf(b, `<td class="%s" data-l="saved" data-sort="%d">%s</td>`,
 			saveTier(d.SavedBytes(), d.SavedPct()), d.SavedBytes(), savedCell(d.SavedBytes(), d.SavedPct()))
 		fmt.Fprintf(b, `<td class="num" data-l="time" data-sort="%.0f">%s</td>`, d.EstSecs, media.HumanDuration(d.EstSecs))
-		fmt.Fprintf(b, `<td class="work" data-l="work" data-sort="%q"><span class="%s">%s</span></td>`,
+		fmt.Fprintf(b, `<td class="work" data-l="work" data-sort="%s"><span class="%s">%s</span></td>`,
 			d.Action, actCls, html.EscapeString(d.Action))
 		fmt.Fprintf(b, `<td class="why" data-l="why">%s</td>`, html.EscapeString(d.Why))
 		b.WriteString("</tr>")
@@ -432,46 +435,71 @@ func detailPanel(b *strings.Builder, idx int, row folderRow) {
 	b.WriteString(`</div>`) // /v-N
 }
 
-// filterJS filters the summary folders by outcome (all / shrinks / grows) and
-// recomputes the SUMMARY box + TOTAL row live from the visible rows, so you can
-// see the real reclaim for just the folders you'd actually convert.
+// filterBar is the all/shrinks/grows control, reused in the summary view and
+// every drill-down panel.
+const filterBar = `<div class="filter">filter: ` +
+	`<button class="fbtn active" data-f="all">all</button>` +
+	`<button class="fbtn" data-f="shrink">shrinks &darr;</button>` +
+	`<button class="fbtn" data-f="grow">grows &uarr;</button>` +
+	`<span class="fnote"></span></div>`
+
+// filterJS wires every view (summary folders + each drill-down panel) so the
+// all/shrinks/grows buttons hide non-matching rows and recompute that view's
+// readout live — the real reclaim for just the rows you'd actually convert.
 const filterJS = `<script>
 (function(){
- var v=document.getElementById('v-summary'); if(!v) return;
- var t=v.querySelector('table'); if(!t||!t.tBodies[0]) return;
- var rows=[].slice.call(t.tBodies[0].rows);
- function num(r,l){var c=r.querySelector('[data-l="'+l+'"]'); return c?(parseFloat(c.getAttribute('data-sort'))||0):0;}
- function set(id,v){var e=document.getElementById(id); if(e) e.textContent=v;}
  function hb(b){b=Math.round(b); if(Math.abs(b)<1024) return b+' B'; var u=['K','M','G','T','P','E'],i=-1,n=Math.abs(b); while(n>=1024&&i<u.length-1){n/=1024;i++;} return (b<0?'-':'')+n.toFixed(2)+' '+u[i]+'B';}
  function hd(s){s=Math.round(s); if(s<=0)return '0s'; var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),x=s%60; if(h>0)return h+'h '+m+'m'; if(m>0)return m+'m '+x+'s'; return x+'s';}
  function bar(p){p=Math.max(0,Math.min(100,p)); var f=Math.round(p/100*10); return '█'.repeat(f)+'░'.repeat(10-f);}
  function tier(sv,p){return sv<0?'t-grow':(p>=35?'t-high':(p>=15?'t-mid':'t-low'));}
  function savedHTML(sv,p){return sv<0?'<span class="meter">░░░░░░░░░░</span> ▲ <span class="bytes">+'+hb(-sv)+' larger</span>':'<span class="meter">'+bar(p)+'</span> '+Math.round(p)+'% <span class="bytes">'+hb(sv)+'</span>';}
- function apply(mode){
-   var o=0,pj=0,sec=0,files=0,re=0,shown=0;
-   rows.forEach(function(r){
-     var sv=num(r,'saved');
-     var ok = mode==='all' || (mode==='shrink'&&sv>0) || (mode==='grow'&&sv<0);
-     r.style.display = ok?'':'none';
-     if(ok){shown++; o+=num(r,'size'); pj+=num(r,'→ est'); files+=num(r,'files'); re+=num(r,'work'); sec+=num(r,'time');}
-   });
-   var rec=o-pj, pct=o?rec/o*100:0;
-   set('s-folders',shown); set('s-files',files); set('s-reenc',re);
-   set('s-orig',hb(o)); set('s-proj',hb(pj)); set('s-time',hd(sec));
-   if(rec>=0){ set('s-reclaim',hb(rec)); set('s-pct','('+Math.round(pct)+'%)'); }
-   else { set('s-reclaim','▲ +'+hb(-rec)+' larger'); set('s-pct',''); }
-   set('s-shown','→ '+shown+' folders shown');
-   set('tf-files',files); set('tf-orig',hb(o)); set('tf-proj',hb(pj)); set('tf-time',hd(sec));
-   var tf=document.getElementById('tf-saved'); if(tf){tf.className=tier(rec,pct); tf.innerHTML=savedHTML(rec,pct);}
+ function cell(r,l){return r.querySelector('[data-l="'+l+'"]');}
+ function num(c){return c?(parseFloat(c.getAttribute('data-sort'))||0):0;}
+ function setTxt(el,v){if(el) el.textContent=v;}
+ function wire(view){
+   var t=view.querySelector('table'); if(!t||!t.tBodies[0]) return;
+   var kind=view.getAttribute('data-kind');          // folders | files
+   var rows=[].slice.call(t.tBodies[0].rows);
+   var btns=view.querySelectorAll('.fbtn');
+   function q(c){return view.querySelector('.'+c);}
+   function apply(mode){
+     var o=0,pj=0,sec=0,shown=0,files=0,re=0,aac=0,keep=0;
+     rows.forEach(function(r){
+       var sc=cell(r,'saved');
+       if(!sc){ r.style.display=''; return; } // placeholder row (e.g. "no readable files")
+       var sv=num(sc);
+       var ok = mode==='all' || (mode==='shrink'&&sv>0) || (mode==='grow'&&sv<0);
+       r.style.display = ok?'':'none';
+       if(!ok) return;
+       shown++; o+=num(cell(r,'size')); pj+=num(cell(r,'→ est')); sec+=num(cell(r,'time'));
+       if(kind==='folders'){ files+=num(cell(r,'files')); re+=num(cell(r,'work')); }
+       else { files++; var wc=cell(r,'work'); var a=wc?(wc.getAttribute('data-sort')||''):''; if(a==='re-encode')re++; else if(a==='add-AAC')aac++; else keep++; }
+     });
+     var rec=o-pj, pct=o?rec/o*100:0;
+     setTxt(q('agg-orig'),hb(o)); setTxt(q('agg-proj'),hb(pj)); setTxt(q('agg-time'),hd(sec));
+     setTxt(q('agg-count'),shown); setTxt(q('agg-files'),files);
+     setTxt(q('agg-reenc'),re); setTxt(q('agg-aac'),aac); setTxt(q('agg-keep'),keep);
+     if(rec>=0){ setTxt(q('agg-reclaim'),hb(rec)); setTxt(q('agg-pct'),'('+Math.round(pct)+'%)'); }
+     else { setTxt(q('agg-reclaim'),'▲ +'+hb(-rec)+' larger'); setTxt(q('agg-pct'),''); }
+     setTxt(q('fnote'),'→ '+shown+(kind==='folders'?' folders':' files')+' shown');
+     if(kind==='folders'){
+       setTxt(document.getElementById('tf-files'),files);
+       setTxt(document.getElementById('tf-orig'),hb(o));
+       setTxt(document.getElementById('tf-proj'),hb(pj));
+       setTxt(document.getElementById('tf-time'),hd(sec));
+       var tf=document.getElementById('tf-saved'); if(tf){tf.className=tier(rec,pct); tf.innerHTML=savedHTML(rec,pct);}
+     }
+   }
+   for(var i=0;i<btns.length;i++){(function(btn){
+     btn.addEventListener('click',function(){
+       for(var j=0;j<btns.length;j++) btns[j].classList.remove('active');
+       btn.classList.add('active'); apply(btn.getAttribute('data-f'));
+     });
+   })(btns[i]);}
+   apply('all'); // normalize the readout on load
  }
- var btns=document.querySelectorAll('.fbtn');
- for(var i=0;i<btns.length;i++){(function(btn){
-   btn.addEventListener('click',function(){
-     for(var j=0;j<btns.length;j++) btns[j].classList.remove('active');
-     btn.classList.add('active'); apply(btn.getAttribute('data-f'));
-   });
- })(btns[i]);}
- apply('all'); // normalize the readout on load (no-op to the row set)
+ var views=document.querySelectorAll('.view[data-kind]');
+ for(var i=0;i<views.length;i++){ try{ wire(views[i]); }catch(e){} }
 })();
 </script>`
 
