@@ -240,6 +240,15 @@ func writeHTML(path, root string, rows []folderRow) error {
 	if totOrig > 0 {
 		savePct = float64(totOrig-totProj) / float64(totOrig) * 100
 	}
+	// Reclaim readout: HumanBytes can't render a negative, and a net growth
+	// reads better as "▲ +X larger" anyway (matches the per-row cells).
+	totSaved := totOrig - totProj
+	reclaimStr := media.HumanBytes(totSaved)
+	pctStr := fmt.Sprintf("(%.0f%%)", savePct)
+	if totSaved < 0 {
+		reclaimStr = "▲ +" + media.HumanBytes(-totSaved) + " larger"
+		pctStr = ""
+	}
 
 	var b strings.Builder
 	b.WriteString(`<!doctype html><html lang="en"><head><meta charset="utf-8">`)
@@ -260,17 +269,24 @@ func writeHTML(path, root string, rows []folderRow) error {
 
 	fmt.Fprintf(&b, `<pre class="summary">┌─ SUMMARY ─────────────────────────────────────────────┐
  root      : %s
- scanned   : %d subfolders · %d files · %d need re-encode
- size      : %s  ->  %s
- reclaim   : <span class="save">%s</span>  <span class="save">(%.0f%%)</span>
- est. time : ~%s   <span class="muted">(varies w/ CPU; copies instant)</span>
+ scanned   : <span id="s-folders">%d</span> subfolders · <span id="s-files">%d</span> files · <span id="s-reenc">%d</span> need re-encode
+ size      : <span id="s-orig">%s</span>  ->  <span id="s-proj">%s</span>
+ reclaim   : <span class="save" id="s-reclaim">%s</span>  <span class="save" id="s-pct">%s</span>
+ est. time : ~<span id="s-time">%s</span>   <span class="muted">(varies w/ CPU; copies instant)</span>
  generated : %s
 └───────────────────────────────────────────────────────┘</pre>`,
 		html.EscapeString(root), len(rows), totFiles, totReenc,
 		media.HumanBytes(totOrig), media.HumanBytes(totProj),
-		media.HumanBytes(totOrig-totProj), savePct,
+		reclaimStr, pctStr,
 		media.HumanDuration(totSecs),
 		time.Now().Format("2006-01-02 15:04:05"))
+
+	// Filter bar: hide folders by outcome; totals recompute live (see filterJS).
+	b.WriteString(`<div class="filter">filter: ` +
+		`<button class="fbtn active" data-f="all">all</button>` +
+		`<button class="fbtn" data-f="shrink">shrinks &darr;</button>` +
+		`<button class="fbtn" data-f="grow">grows &uarr;</button>` +
+		`<span class="fnote" id="s-shown"></span></div>`)
 
 	// Table
 	b.WriteString(`<table><colgroup>`)
@@ -315,11 +331,10 @@ func writeHTML(path, root string, rows []folderRow) error {
 		b.WriteString("</tr>")
 	}
 	b.WriteString("</tbody><tfoot><tr>")
-	totSaved := totOrig - totProj
-	fmt.Fprintf(&b, `<td class="folder">TOTAL</td><td class="num">%d</td><td colspan="2"></td>`, totFiles)
-	fmt.Fprintf(&b, `<td class="num">%s</td><td class="num">%s</td>`, media.HumanBytes(totOrig), media.HumanBytes(totProj))
-	fmt.Fprintf(&b, `<td class="%s">%s</td>`, saveTier(totSaved, savePct), savedCell(totSaved, savePct))
-	fmt.Fprintf(&b, `<td class="num">%s</td><td colspan="2"></td>`, media.HumanDuration(totSecs))
+	fmt.Fprintf(&b, `<td class="folder" id="tf-label">TOTAL</td><td class="num" id="tf-files">%d</td><td colspan="2"></td>`, totFiles)
+	fmt.Fprintf(&b, `<td class="num" id="tf-orig">%s</td><td class="num" id="tf-proj">%s</td>`, media.HumanBytes(totOrig), media.HumanBytes(totProj))
+	fmt.Fprintf(&b, `<td class="%s" id="tf-saved">%s</td>`, saveTier(totSaved, savePct), savedCell(totSaved, savePct))
+	fmt.Fprintf(&b, `<td class="num" id="tf-time">%s</td><td colspan="2"></td>`, media.HumanDuration(totSecs))
 	b.WriteString("</tr></tfoot></table>")
 
 	b.WriteString(`<div class="legend">` +
@@ -334,6 +349,7 @@ func writeHTML(path, root string, rows []folderRow) error {
 	}
 
 	b.WriteString(`</div></div></main>`)
+	b.WriteString(filterJS)
 	b.WriteString(sortJS)
 	b.WriteString(`</body></html>`)
 
@@ -416,6 +432,49 @@ func detailPanel(b *strings.Builder, idx int, row folderRow) {
 	b.WriteString(`</div>`) // /v-N
 }
 
+// filterJS filters the summary folders by outcome (all / shrinks / grows) and
+// recomputes the SUMMARY box + TOTAL row live from the visible rows, so you can
+// see the real reclaim for just the folders you'd actually convert.
+const filterJS = `<script>
+(function(){
+ var v=document.getElementById('v-summary'); if(!v) return;
+ var t=v.querySelector('table'); if(!t||!t.tBodies[0]) return;
+ var rows=[].slice.call(t.tBodies[0].rows);
+ function num(r,l){var c=r.querySelector('[data-l="'+l+'"]'); return c?(parseFloat(c.getAttribute('data-sort'))||0):0;}
+ function set(id,v){var e=document.getElementById(id); if(e) e.textContent=v;}
+ function hb(b){b=Math.round(b); if(Math.abs(b)<1024) return b+' B'; var u=['K','M','G','T','P','E'],i=-1,n=Math.abs(b); while(n>=1024&&i<u.length-1){n/=1024;i++;} return (b<0?'-':'')+n.toFixed(2)+' '+u[i]+'B';}
+ function hd(s){s=Math.round(s); if(s<=0)return '0s'; var h=Math.floor(s/3600),m=Math.floor((s%3600)/60),x=s%60; if(h>0)return h+'h '+m+'m'; if(m>0)return m+'m '+x+'s'; return x+'s';}
+ function bar(p){p=Math.max(0,Math.min(100,p)); var f=Math.round(p/100*10); return '█'.repeat(f)+'░'.repeat(10-f);}
+ function tier(sv,p){return sv<0?'t-grow':(p>=35?'t-high':(p>=15?'t-mid':'t-low'));}
+ function savedHTML(sv,p){return sv<0?'<span class="meter">░░░░░░░░░░</span> ▲ <span class="bytes">+'+hb(-sv)+' larger</span>':'<span class="meter">'+bar(p)+'</span> '+Math.round(p)+'% <span class="bytes">'+hb(sv)+'</span>';}
+ function apply(mode){
+   var o=0,pj=0,sec=0,files=0,re=0,shown=0;
+   rows.forEach(function(r){
+     var sv=num(r,'saved');
+     var ok = mode==='all' || (mode==='shrink'&&sv>0) || (mode==='grow'&&sv<0);
+     r.style.display = ok?'':'none';
+     if(ok){shown++; o+=num(r,'size'); pj+=num(r,'→ est'); files+=num(r,'files'); re+=num(r,'work'); sec+=num(r,'time');}
+   });
+   var rec=o-pj, pct=o?rec/o*100:0;
+   set('s-folders',shown); set('s-files',files); set('s-reenc',re);
+   set('s-orig',hb(o)); set('s-proj',hb(pj)); set('s-time',hd(sec));
+   if(rec>=0){ set('s-reclaim',hb(rec)); set('s-pct','('+Math.round(pct)+'%)'); }
+   else { set('s-reclaim','▲ +'+hb(-rec)+' larger'); set('s-pct',''); }
+   set('s-shown','→ '+shown+' folders shown');
+   set('tf-files',files); set('tf-orig',hb(o)); set('tf-proj',hb(pj)); set('tf-time',hd(sec));
+   var tf=document.getElementById('tf-saved'); if(tf){tf.className=tier(rec,pct); tf.innerHTML=savedHTML(rec,pct);}
+ }
+ var btns=document.querySelectorAll('.fbtn');
+ for(var i=0;i<btns.length;i++){(function(btn){
+   btn.addEventListener('click',function(){
+     for(var j=0;j<btns.length;j++) btns[j].classList.remove('active');
+     btn.classList.add('active'); apply(btn.getAttribute('data-f'));
+   });
+ })(btns[i]);}
+ apply('all'); // normalize the readout on load (no-op to the row set)
+})();
+</script>`
+
 // sortJS adds dependency-free click-to-sort to every table on the page.
 // Numeric columns sort by their data-sort raw value, text by visible text.
 const sortJS = `<script>
@@ -472,6 +531,12 @@ main{width:100%;max-width:1900px;margin:0 auto;padding:clamp(14px,3vw,36px)}
   border:0;font-size:12.5px}
 .summary .save{color:var(--bright)}
 .muted{color:var(--dim)}
+.filter{margin:0 0 12px;color:var(--mid);font-size:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fbtn{font:inherit;font-size:11px;cursor:pointer;color:var(--fg);background:#0a0d0a;
+  border:1px solid var(--line);border-radius:3px;padding:3px 10px;text-transform:uppercase;letter-spacing:.5px}
+.fbtn:hover{border-color:var(--fg)}
+.fbtn.active{color:var(--bg);background:var(--fg);border-color:var(--fg);font-weight:700}
+.fnote{color:var(--amber);font-size:11px}
 table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px}
 thead th{text-align:left;padding:5px 8px;color:var(--bg);background:var(--fg);
   text-transform:uppercase;letter-spacing:.5px;font-weight:700;border:1px solid var(--bg)}
