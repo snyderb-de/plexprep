@@ -283,6 +283,16 @@ func renderHTML(root string, rows []folderRow, mode renderMode) string {
 
 	// Prompt + summary readout
 	b.WriteString(`<div class="body">`)
+
+	// A single row (e.g. a folder with loose files and no subfolders, or an
+	// explicit file selection) needs no folder-summary wrapper / drill-down
+	// indirection — render its file table directly as the main view.
+	if len(rows) == 1 {
+		writeSingleView(&b, root, rows[0])
+		b.WriteString(`</div></div></main>`)
+		return finishHTML(&b, mode)
+	}
+
 	b.WriteString(`<div class="view" id="v-summary" data-kind="folders">`)
 	fmt.Fprintf(&b, `<div class="prompt"><span class="usr">bag@plexprep</span>:<span class="pwd">~</span>$ plexprep --report %s<span class="cur"></span></div>`,
 		html.EscapeString(root))
@@ -367,6 +377,14 @@ func renderHTML(root string, rows []folderRow, mode renderMode) string {
 
 	b.WriteString(`</div></div></main>`)
 
+	return finishHTML(&b, mode)
+}
+
+// finishHTML appends the chrome shared by every report layout (selection bar,
+// convert overlays, and the page scripts) and returns the finished document.
+func finishHTML(b *strings.Builder, mode renderMode) string {
+	serve := mode != modeStatic
+
 	// Sticky selection bar: shows the marked set + exports the --from list.
 	convertBtn := ""
 	if serve {
@@ -433,7 +451,13 @@ func detailPanel(b *strings.Builder, idx int, row folderRow) {
 		media.HumanDuration(rp.EstSecs), html.EscapeString(rp.Why))
 
 	b.WriteString(filterBar)
+	writeFileTable(b, rp)
+	b.WriteString(`</div>`) // /v-N
+}
 
+// writeFileTable writes the per-file breakdown table for a report (used by
+// both the per-folder drill-down panel and the single-row flat view).
+func writeFileTable(b *strings.Builder, rp *media.Report) {
 	cols := []string{"file", "codec", "res", "size", "→ est", "saved", "time", "work", "why"}
 	widths := []string{"3%", "22%", "7%", "7%", "8%", "8%", "16%", "5%", "8%", "10%"}
 	b.WriteString(`<table><colgroup>`)
@@ -484,7 +508,46 @@ func detailPanel(b *strings.Builder, idx int, row folderRow) {
 		b.WriteString(`<tr><td colspan="10" class="muted">no readable video files</td></tr>`)
 	}
 	b.WriteString("</tbody></table>")
-	b.WriteString(`</div>`) // /v-N
+}
+
+// writeSingleView renders the report as a flat file table with no
+// folder-summary wrapper or drill-down link — used when there's exactly one
+// row (a folder with loose files and no subfolders, or an explicit file
+// selection).
+func writeSingleView(b *strings.Builder, root string, row folderRow) {
+	rp := row.Report
+	b.WriteString(`<div class="view" id="v-summary" data-kind="files">`)
+
+	fmt.Fprintf(b, `<div class="prompt"><span class="usr">bag@plexprep</span>:<span class="pwd">~</span>$ plexprep --analyze %s<span class="cur"></span></div>`,
+		html.EscapeString(root))
+
+	reclaimStr := media.HumanBytes(rp.SavedBytes())
+	pctStr := fmt.Sprintf("(%.0f%%)", rp.SavedPct())
+	if rp.SavedBytes() < 0 {
+		reclaimStr = "▲ +" + media.HumanBytes(-rp.SavedBytes()) + " larger"
+		pctStr = ""
+	}
+	fmt.Fprintf(b, `<pre class="summary">┌─ SUMMARY ─────────────────────────────────────────────┐
+ files     : <span class="agg-files">%d</span>   (<span class="agg-reenc">%d</span> re-encode · <span class="agg-aac">%d</span> add-AAC · <span class="agg-keep">%d</span> keep)
+ method    : %s
+ size      : <span class="agg-orig">%s</span>  ->  <span class="agg-proj">%s</span>
+ reclaim   : <span class="save agg-reclaim">%s</span>  <span class="save agg-pct">%s</span>
+ est. time : ~<span class="agg-time">%s</span>
+ why       : %s
+└─────────────────────────────────────────────────────────┘</pre>`,
+		rp.Files, rp.ReencodeCount, rp.AudioOnly, rp.NoOp,
+		html.EscapeString(rp.Recommended.String()),
+		media.HumanBytes(rp.OrigBytes), media.HumanBytes(rp.ProjBytes),
+		reclaimStr, pctStr,
+		media.HumanDuration(rp.EstSecs), html.EscapeString(rp.Why))
+
+	b.WriteString(filterBar)
+	writeFileTable(b, rp)
+	b.WriteString(`<div class="legend">` +
+		`<b>work</b> &mdash; <span class="we">re-encode</span> video · <span class="wa">add-AAC</span> only · <span class="wk">keep</span> as-is` +
+		` &nbsp;&nbsp;|&nbsp;&nbsp; <b>bar</b> &mdash; <span class="t-low">low</span> → <span class="t-mid">mid</span> → <span class="t-high">high</span> savings · <span class="t-grow">▲ larger</span></div>`)
+	b.WriteString(`<div class="done">// estimates only · copies are near-instant · click a column to sort&nbsp;<span class="cur"></span></div>`)
+	b.WriteString(`</div>`) // /v-summary
 }
 
 // filterBar is the all/shrinks/grows control, reused in the summary view and

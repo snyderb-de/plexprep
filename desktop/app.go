@@ -16,10 +16,11 @@ import (
 // App is the Wails-bound backend. It reuses the same scan/convert engine as the
 // CLI and streams progress to the frontend via Wails events.
 type App struct {
-	ctx   context.Context
-	mu    sync.Mutex
-	busy  bool
-	abort bool
+	ctx       context.Context
+	mu        sync.Mutex
+	busy      bool
+	abort     bool
+	abortScan bool
 }
 
 func NewApp() *App { return &App{} }
@@ -45,6 +46,10 @@ func (a *App) BrowseFiles() ([]string, error) {
 // Scan probes the target, emitting "pp:scan" progress events, and returns the
 // rendered interactive report HTML (embed mode).
 func (a *App) Scan(path string, recursive bool) (string, error) {
+	a.mu.Lock()
+	a.abortScan = false
+	a.mu.Unlock()
+
 	total := 0
 	if fi, err := os.Stat(path); err == nil {
 		if fi.IsDir() {
@@ -59,12 +64,16 @@ func (a *App) Scan(path string, recursive bool) (string, error) {
 
 	done := 0
 	last := time.Now()
-	cb := func(name string) {
+	cb := func(name string) bool {
 		done++
 		if time.Since(last) > 50*time.Millisecond || done == total {
 			last = time.Now()
 			wr.EventsEmit(a.ctx, "pp:scan", map[string]any{"t": "probe", "done": done, "total": total, "name": name})
 		}
+		a.mu.Lock()
+		ab := a.abortScan
+		a.mu.Unlock()
+		return ab
 	}
 	html, err := ui.ScanToHTML(path, recursive, cb)
 	if err != nil {
@@ -78,16 +87,24 @@ func (a *App) Scan(path string, recursive bool) (string, error) {
 // ScanFiles probes an explicit file selection (from BrowseFiles) and returns
 // the rendered report, emitting "pp:scan" progress.
 func (a *App) ScanFiles(paths []string) (string, error) {
+	a.mu.Lock()
+	a.abortScan = false
+	a.mu.Unlock()
+
 	total := len(paths)
 	wr.EventsEmit(a.ctx, "pp:scan", map[string]any{"t": "begin", "total": total})
 	done := 0
 	last := time.Now()
-	cb := func(name string) {
+	cb := func(name string) bool {
 		done++
 		if time.Since(last) > 50*time.Millisecond || done == total {
 			last = time.Now()
 			wr.EventsEmit(a.ctx, "pp:scan", map[string]any{"t": "probe", "done": done, "total": total, "name": name})
 		}
+		a.mu.Lock()
+		ab := a.abortScan
+		a.mu.Unlock()
+		return ab
 	}
 	html, err := ui.ScanFilesToHTML(paths, cb)
 	if err != nil {
@@ -102,6 +119,13 @@ func (a *App) ScanFiles(paths []string) (string, error) {
 func (a *App) Abort() {
 	a.mu.Lock()
 	a.abort = true
+	a.mu.Unlock()
+}
+
+// AbortScan requests the running scan stop after the current file probe.
+func (a *App) AbortScan() {
+	a.mu.Lock()
+	a.abortScan = true
 	a.mu.Unlock()
 }
 

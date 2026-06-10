@@ -6,6 +6,10 @@ export function Abort() {
   return window['go']['main']['App']['Abort']();
 }
 
+export function AbortScan() {
+  return window['go']['main']['App']['AbortScan']();
+}
+
 export function Browse() {
   return window['go']['main']['App']['Browse']();
 }

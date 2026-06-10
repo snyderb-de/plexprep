@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -137,12 +138,13 @@ func (s *server) handleScan(w http.ResponseWriter, r *http.Request) {
 
 	done := 0
 	last := time.Now()
-	cb := func(name string) {
+	cb := func(name string) bool {
 		done++
 		if time.Since(last) > 60*time.Millisecond || done == total {
 			last = time.Now()
 			emit(map[string]any{"t": "probe", "done": done, "total": total, "name": name})
 		}
+		return false
 	}
 
 	rows, err := buildRows(path, recursive, cb)
@@ -160,10 +162,15 @@ func (s *server) handleScan(w http.ResponseWriter, r *http.Request) {
 	emit(map[string]any{"t": "done", "id": id})
 }
 
+// ErrScanAborted is returned by ScanToHTML / ScanFilesToHTML when cb signals
+// cancellation mid-probe.
+var ErrScanAborted = errors.New("scan cancelled")
+
 // ScanToHTML scans a target and returns the rendered interactive report HTML
-// (serve mode). cb fires after each file probe for progress UI. Exported for
-// the desktop (Wails) front end, which reuses the same report engine.
-func ScanToHTML(path string, recursive bool, cb func(name string)) (string, error) {
+// (serve mode). cb fires after each file probe for progress UI; cb returning
+// true cancels the scan early. Exported for the desktop (Wails) front end,
+// which reuses the same report engine.
+func ScanToHTML(path string, recursive bool, cb func(name string) bool) (string, error) {
 	rows, err := buildRows(path, recursive, cb)
 	if err != nil {
 		return "", err
@@ -172,12 +179,16 @@ func ScanToHTML(path string, recursive bool, cb func(name string)) (string, erro
 }
 
 // ScanFilesToHTML scans an explicit list of files (e.g. a native multi-select)
-// into one "(selection)" report, embed mode. cb fires per probe.
-func ScanFilesToHTML(paths []string, cb func(name string)) (string, error) {
+// into one "(selection)" report, embed mode. cb fires per probe; cb returning
+// true cancels the scan early.
+func ScanFilesToHTML(paths []string, cb func(name string) bool) (string, error) {
 	if len(paths) == 0 {
 		return "", fmt.Errorf("no files selected")
 	}
 	rep := media.AnalyzePathsCB("(selection)", paths, cb)
+	if rep.Aborted {
+		return "", ErrScanAborted
+	}
 	if rep.Files == 0 {
 		return "", fmt.Errorf("no readable video files in selection")
 	}
@@ -187,8 +198,9 @@ func ScanFilesToHTML(paths []string, cb func(name string)) (string, error) {
 
 // buildRows analyzes a target into report rows. A file → one row; a folder →
 // a "(root)" row of loose files plus (when recursive) one row per subfolder.
-// cb fires after each file probe (nil ok).
-func buildRows(path string, recursive bool, cb func(name string)) ([]folderRow, error) {
+// cb fires after each file probe (nil ok); cb returning true cancels the scan
+// early (returns ErrScanAborted).
+func buildRows(path string, recursive bool, cb func(name string) bool) ([]folderRow, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -197,12 +209,20 @@ func buildRows(path string, recursive bool, cb func(name string)) ([]folderRow, 
 		if !media.IsVideoExt(path) {
 			return nil, fmt.Errorf("%s is not a video file", filepath.Base(path))
 		}
-		return []folderRow{{Name: filepath.Base(path), Report: media.AnalyzePathsCB(filepath.Dir(path), []string{path}, cb)}}, nil
+		rep := media.AnalyzePathsCB(filepath.Dir(path), []string{path}, cb)
+		if rep.Aborted {
+			return nil, ErrScanAborted
+		}
+		return []folderRow{{Name: filepath.Base(path), Report: rep}}, nil
 	}
 
 	var rows []folderRow
 	if top, err := media.FindVideosTop(path); err == nil && len(top) > 0 {
-		rows = append(rows, folderRow{Name: "(root)", Report: media.AnalyzePathsCB(path, top, cb)})
+		rep := media.AnalyzePathsCB(path, top, cb)
+		if rep.Aborted {
+			return nil, ErrScanAborted
+		}
+		rows = append(rows, folderRow{Name: "(root)", Report: rep})
 	}
 	if !recursive {
 		if len(rows) == 0 {
@@ -228,6 +248,9 @@ func buildRows(path string, recursive bool, cb func(name string)) ([]folderRow, 
 			continue
 		}
 		rep := media.AnalyzePathsCB(sub, files, cb)
+		if rep.Aborted {
+			return nil, ErrScanAborted
+		}
 		if rep.Files == 0 {
 			continue
 		}

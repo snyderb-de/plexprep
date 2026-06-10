@@ -8,6 +8,7 @@ const APP = () => (window.go && window.go.main && window.go.main.App) || null;
 
 function show(id) {
   document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.id === id));
+  $('go-home').hidden = id !== 's-report';
 }
 
 // --- settings (persisted) --------------------------------------------------
@@ -157,21 +158,32 @@ function scanError(msg) {
   e.innerHTML = 'scan error: ' + msg + ' &nbsp; <a id="back-home">&larr; back</a>';
   $('back-home').onclick = () => show('s-home');
 }
+let scanCancelled = false;
 async function scanFolder(path) {
   const app = APP(); if (!app) return;
+  scanCancelled = false;
   resetScan(path);
   try {
     const html = await app.Scan(path, $('recursive').checked);
+    if (scanCancelled) return;
     spin(false); pushRecent(path); openReport(html);
-  } catch (e) { scanError(String(e)); }
+  } catch (e) { if (!scanCancelled) scanError(String(e)); }
 }
 async function scanFiles(paths) {
   const app = APP(); if (!app) return;
+  scanCancelled = false;
   resetScan('(' + paths.length + ' files)');
   try {
     const html = await app.ScanFiles(paths);
+    if (scanCancelled) return;
     spin(false); openReport(html);
-  } catch (e) { scanError(String(e)); }
+  } catch (e) { if (!scanCancelled) scanError(String(e)); }
+}
+function cancelScan() {
+  scanCancelled = true;
+  spin(false);
+  const app = APP(); if (app && app.AbortScan) app.AbortScan();
+  show('s-home');
 }
 function openReport(html) {
   const f = $('rframe'); f.srcdoc = html; show('s-report');
@@ -201,6 +213,8 @@ function wire() {
     const app = APP(); if (!app) return;
     const fs = await app.BrowseFiles(); if (fs && fs.length) scanFiles(fs);
   };
+  $('scan-cancel').onclick = cancelScan;
+  $('go-home').onclick = () => show('s-home');
 
   // backend events
   if (RT() && RT().EventsOn) RT().EventsOn('pp:scan', onScan);

@@ -47,3 +47,30 @@ func TestWriteHTMLDrilldown(t *testing.T) {
 		t.Errorf("tables=%d want 3", c)
 	}
 }
+
+// TestRenderHTMLSingleRowFlat verifies a lone "(root)" row (folder with loose
+// files and no subfolders) renders as a flat file table with no
+// folder-summary wrapper or drill-down link.
+func TestRenderHTMLSingleRowFlat(t *testing.T) {
+	r := &media.Report{Root: "(root)", Files: 1, Recommended: media.ProfileZeroTranscode, Why: "x"}
+	r.Details = append(r.Details, media.FileDetail{
+		Name: "movie.mkv", Codec: "h264", Width: 1920, Height: 1080,
+		OrigBytes: 1000, ProjBytes: 600, Action: "keep", Method: "copy", Why: "ok",
+	})
+	r.OrigBytes, r.ProjBytes = 1000, 600
+	rows := []folderRow{{Name: "(root)", Report: r}}
+
+	s := renderHTML("Y:/Media", rows, modeEmbed)
+
+	if !strings.Contains(s, `id="v-summary" data-kind="files"`) {
+		t.Error(`want id="v-summary" data-kind="files"`)
+	}
+	for _, unwanted := range []string{`data-kind="folders"`, `id="v-0"`, `href="#v-0"`, `(root)`} {
+		if strings.Contains(s, unwanted) {
+			t.Errorf("unexpected %q in single-row output", unwanted)
+		}
+	}
+	if c := strings.Count(s, "<table>"); c != 1 {
+		t.Errorf("tables=%d want 1", c)
+	}
+}

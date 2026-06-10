@@ -36,6 +36,9 @@ body.crt-on::after{content:"";position:fixed;inset:0;z-index:61;pointer-events:n
 .tb-sub{color:var(--mid);font-weight:400}
 .tb-gear{margin-left:auto;background:none;border:0;color:var(--mid);font-size:16px;cursor:pointer;--wails-draggable:no-drag}
 .tb-gear:hover{color:var(--amber)}
+.tb-home{margin-left:auto}
+.tb-home[hidden]{display:none}
+.tb-home ~ .tb-gear{margin-left:0}
 
 /* screens */
 #screens{position:absolute;top:34px;left:0;right:0;bottom:0;z-index:10}
@@ -83,6 +86,7 @@ body.crt-on::after{content:"";position:fixed;inset:0;z-index:61;pointer-events:n
 .scan-name{color:var(--mid);font-size:12px;margin-top:10px;height:1.4em;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
 .scan-spin{margin-top:14px;color:var(--amber);font-size:13px;min-height:1.4em}
+.scan-cancel{margin-top:18px;align-self:flex-start}
 .scan-err{color:var(--red);margin-top:16px}
 .scan-err a{color:var(--fg)}
 

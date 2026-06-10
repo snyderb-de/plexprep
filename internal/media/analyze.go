@@ -105,6 +105,7 @@ type Report struct {
 	AudioOnly     int
 	NoOp          int
 	Files4K       int
+	Aborted       bool // true if a cb returned true (scan cancelled mid-probe)
 
 	Codecs  map[string]int // source video codec -> count
 	Details []FileDetail   // per-file breakdown (report drill-down)
@@ -134,8 +135,9 @@ func AnalyzePaths(label string, paths []string) *Report {
 }
 
 // AnalyzePathsCB is AnalyzePaths with a per-file callback invoked after each
-// probe (used to drive scan-progress UI). cb may be nil.
-func AnalyzePathsCB(label string, paths []string, cb func(name string)) *Report {
+// probe (used to drive scan-progress UI). cb may be nil. If cb returns true,
+// the scan stops early and the returned Report has Aborted set.
+func AnalyzePathsCB(label string, paths []string, cb func(name string) bool) *Report {
 	r := &Report{Root: label, Codecs: map[string]int{}}
 
 	// First pass: probe everything, learn the content mix.
@@ -144,8 +146,9 @@ func AnalyzePathsCB(label string, paths []string, cb func(name string)) *Report 
 	anyLegacy := false
 	for _, p := range paths {
 		mi, err := Probe(p)
-		if cb != nil {
-			cb(filepath.Base(p))
+		if cb != nil && cb(filepath.Base(p)) {
+			r.Aborted = true
+			return r
 		}
 		if err != nil {
 			r.ProbeErrors++
