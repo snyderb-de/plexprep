@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>plexprep</title>
+</head>
+<body class="crt-on">
+  <canvas id="rain"></canvas>
+  <div id="scanlines"></div>
+
+  <div id="titlebar">
+    <span class="tb-dots">
+      <button class="dot r" id="win-close" title="close"></button>
+      <button class="dot y" id="win-min" title="minimize"></button>
+      <button class="dot g" id="win-max" title="maximize"></button>
+    </span>
+    <span class="tb-title">plexprep<span class="tb-sub"> // zero-transcode media forge</span></span>
+    <button class="tb-gear" id="open-settings" title="settings">&#9881;</button>
+  </div>
+
+  <main id="screens">
+    <section id="s-boot" class="screen active"><pre id="bootlog"></pre></section>
+
+    <section id="s-home" class="screen">
+      <pre id="logo" class="logo"></pre>
+      <div class="tagline">batch-convert video into Plex/Jellyfin <b>direct-play</b> files &middot; zero needless transcoding</div>
+      <div class="pickbtns">
+        <button class="bigbtn" id="pick-folder"><span class="bk">&#9658;</span> browse folder</button>
+        <button class="bigbtn" id="pick-files"><span class="bk">&#9658;</span> browse files</button>
+      </div>
+      <label class="rec"><input type="checkbox" id="recursive" checked> scan subfolders (recursive)</label>
+      <div class="recent" id="recent"></div>
+      <div class="hint" id="home-hint">// pick a target to scan&nbsp;<span class="cur"></span></div>
+    </section>
+
+    <section id="s-scan" class="screen">
+      <div class="prompt"><span class="usr">bag@plexprep</span>:<span class="pwd">~</span>$ scan <span id="scan-path"></span><span class="cur"></span></div>
+      <div class="scan-head">probing metadata <span class="dimx">(no full-file reads)</span></div>
+      <div class="scan-num"><span id="scan-done">0</span> / <span id="scan-total">?</span> files</div>
+      <div class="meterbig"><span id="scan-bar" class="meterfill"></span></div>
+      <div class="scan-name" id="scan-name">&nbsp;</div>
+      <div class="scan-spin" id="scan-spin"></div>
+      <div class="scan-err" id="scan-err" hidden></div>
+    </section>
+
+    <section id="s-report" class="screen">
+      <iframe id="rframe" title="report"></iframe>
+    </section>
+  </main>
+
+  <div id="settings" hidden>
+    <div class="setbox">
+      <div class="sethead">&#9484;&#9472; SETTINGS &#9472;&#9488;</div>
+      <div class="setrow"><span class="setk">CRT effect</span>
+        <div class="setseg" id="set-crt">
+          <button data-v="off">off</button><button data-v="low">low</button><button data-v="on" class="on">full</button>
+        </div></div>
+      <div class="setrow"><span class="setk">matrix fx</span>
+        <div class="setseg" id="set-rain"><button data-v="off">off</button><button data-v="on" class="on">on</button></div></div>
+      <div class="setrow"><span class="setk">sound</span>
+        <div class="setseg" id="set-sound"><button data-v="off" class="on">off</button><button data-v="on">blips</button></div></div>
+      <div class="setbtns"><button class="bigbtn sm" id="close-settings">close</button></div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

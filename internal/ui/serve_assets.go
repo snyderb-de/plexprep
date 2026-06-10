@@ -200,6 +200,63 @@ const scanShell = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 })();
 </script></body></html>`
 
+// embedJS is the desktop (Wails) variant of serveJS: same options modal +
+// status dashboard, but conversion runs via the bound Go App and progress
+// arrives over Wails events (the report renders inside an iframe, so it reaches
+// the runtime through window.parent).
+const embedJS = `<script>
+(function(){
+ var P=window.parent||window;
+ var RT=P.runtime||window.runtime;
+ var APP=(P.go&&P.go.main&&P.go.main.App)||(window.go&&window.go.main&&window.go.main.App);
+ function $(id){return document.getElementById(id);}
+ function hb(b){b=Math.round(b); if(Math.abs(b)<1024) return b+' B'; var u=['K','M','G','T','P','E'],i=-1,n=Math.abs(b); while(n>=1024&&i<u.length-1){n/=1024;i++;} return (b<0?'-':'')+n.toFixed(2)+' '+u[i]+'B';}
+ function hd(s){s=Math.round(s); if(s<=0)return '0s'; var h=(s/3600)|0,m=((s%3600)/60)|0,x=s%60; if(h>0)return h+'h '+m+'m'; if(m>0)return m+'m '+x+'s'; return x+'s';}
+ function picked(){var o=[]; document.querySelectorAll('.pick-cb').forEach(function(c){ if(c.checked) o.push({path:c.getAttribute('data-path'),size:+c.getAttribute('data-size')||0,saved:+c.getAttribute('data-saved')||0}); }); return o;}
+
+ var cv=$('sel-convert');
+ if(cv) cv.addEventListener('click', function(){
+   var p=picked(); if(!p.length) return;
+   var sz=p.reduce(function(a,x){return a+x.size;},0), sv=p.reduce(function(a,x){return a+x.saved;},0);
+   $('opt-summary').innerHTML='<b>'+p.length+'</b> file'+(p.length===1?'':'s')+' &middot; '+hb(sz)+
+     ' &rarr; reclaim '+(sv>=0?'<b class="save">'+hb(sv)+'</b>':'<b class="grow">&#9650; +'+hb(-sv)+' larger</b>')+
+     ' <span class="dimx">(estimate)</span>';
+   $('opts').hidden=false;
+ });
+ var oc=$('opt-cancel'); if(oc) oc.addEventListener('click', function(){ $('opts').hidden=true; });
+
+ var clockT=null,t0=0,s={total:0,done:0,ok:0,fail:0,skip:0,reclaim:0,eta:0};
+ function startClock(){ t0=Date.now(); clockT=setInterval(function(){ $('st-clock').textContent=hd((Date.now()-t0)/1000); },1000); }
+ function stopClock(){ if(clockT) clearInterval(clockT); }
+ function logln(cls,txt){ var d=document.createElement('div'); d.className=cls; d.textContent=txt; var L=$('st-log'); L.appendChild(d); L.scrollTop=L.scrollHeight; }
+ function grid(){ $('st-grid').textContent='files     : '+s.done+' / '+s.total+'   ('+s.ok+' ok · '+s.fail+' fail · '+s.skip+' skip)\nreclaimed : '+hb(s.reclaim)+'\nelapsed   : '+hd((Date.now()-t0)/1000); }
+ function handle(ev){
+   if(ev.t==='start'){ logln('dimx','▸ ['+ev.idx+'/'+ev.total+'] '+ev.name); $('st-name').textContent='['+ev.idx+'/'+ev.total+'] '+ev.name; $('st-pbar').style.width='0%'; $('st-pct').textContent='0%'; $('st-speed').textContent=''; $('st-eta').textContent=''; }
+   else if(ev.t==='progress'){ var p=Math.round(ev.frac*100); $('st-pbar').style.width=p+'%'; $('st-pct').textContent=p+'%'; $('st-speed').textContent=ev.speed?('@ '+ev.speed):''; if(ev.eta) $('st-eta').textContent='eta ~'+hd(ev.eta); var ov=(s.done+ev.frac)/Math.max(1,s.total); $('st-obar').style.width=Math.round(ov*100)+'%'; $('st-ocount').textContent=s.done+'/'+s.total; }
+   else if(ev.t==='done-file'){ s.done++; s.ok++; s.reclaim+=ev.saved; logln('ok','✓ '+ev.name+'  '+hb(ev.orig)+' → '+hb(ev.nu)+'  ('+(ev.saved>=0?hb(ev.saved)+' saved':'▲ +'+hb(-ev.saved)+' larger')+')'); $('st-obar').style.width=Math.round(s.done/Math.max(1,s.total)*100)+'%'; grid(); }
+   else if(ev.t==='skip'){ s.done++; s.skip++; logln('dimx','● '+ev.name+'  '+(ev.reason||'already optimal')); grid(); }
+   else if(ev.t==='fail'){ s.done++; s.fail++; logln('err','✘ '+ev.name+'  '+ev.err); grid(); }
+   else if(ev.t==='summary'){ s.ok=ev.ok; s.fail=ev.fail; s.skip=ev.skip; s.reclaim=ev.reclaim; grid(); finish(); }
+ }
+ function finish(){ stopClock(); $('st-phase').textContent='DONE'; $('st-obar').style.width='100%'; $('st-abort').hidden=true; $('st-close').hidden=false; logln('ok','— complete · '+s.ok+' converted · reclaimed '+hb(s.reclaim)); }
+
+ if(RT&&RT.EventsOn) RT.EventsOn('pp:convert', handle);
+ var os_=$('opt-start');
+ if(os_) os_.addEventListener('click', function(){
+   var p=picked(); if(!p.length) return;
+   if(!APP){ alert('desktop bridge unavailable'); return; }
+   var prof=(document.querySelector('input[name=prof]:checked')||{}).value||'';
+   $('opts').hidden=true; $('status').hidden=false; $('st-close').hidden=true; $('st-abort').hidden=false;
+   $('st-log').innerHTML=''; $('st-phase').textContent='CONVERTING';
+   s={total:p.length,done:0,ok:0,fail:0,skip:0,reclaim:0,eta:0}; startClock(); grid();
+   logln('dimx','convert '+p.length+' files · profile='+(prof||'zero')+($('opt-replace').checked?' · replace':'')+($('opt-delete').checked?' · delete':''));
+   APP.Convert(p.map(function(x){return x.path;}), prof, $('opt-replace').checked, $('opt-delete').checked);
+ });
+ var sc=$('st-close'); if(sc) sc.addEventListener('click', function(){ if(P!==window&&P.ppDone){ P.ppDone(); } else { location.reload(); } });
+ var sa=$('st-abort'); if(sa) sa.addEventListener('click', function(){ if(APP&&APP.Abort) APP.Abort(); sa.textContent='aborting…'; });
+})();
+</script>`
+
 // pickerHTML is the serve-mode landing page: choose a folder/file, toggle
 // recursion, then scan. It uses /api/ls for a server-side directory browser.
 const pickerHTML = `<!doctype html><html lang="en"><head><meta charset="utf-8">

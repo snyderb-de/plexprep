@@ -155,9 +155,34 @@ func (s *server) handleScan(w http.ResponseWriter, r *http.Request) {
 	if s.scans == nil {
 		s.scans = map[string]string{}
 	}
-	s.scans[id] = renderHTML(path, rows, true)
+	s.scans[id] = renderHTML(path, rows, modeServe)
 	s.mu.Unlock()
 	emit(map[string]any{"t": "done", "id": id})
+}
+
+// ScanToHTML scans a target and returns the rendered interactive report HTML
+// (serve mode). cb fires after each file probe for progress UI. Exported for
+// the desktop (Wails) front end, which reuses the same report engine.
+func ScanToHTML(path string, recursive bool, cb func(name string)) (string, error) {
+	rows, err := buildRows(path, recursive, cb)
+	if err != nil {
+		return "", err
+	}
+	return renderHTML(path, rows, modeEmbed), nil
+}
+
+// ScanFilesToHTML scans an explicit list of files (e.g. a native multi-select)
+// into one "(selection)" report, embed mode. cb fires per probe.
+func ScanFilesToHTML(paths []string, cb func(name string)) (string, error) {
+	if len(paths) == 0 {
+		return "", fmt.Errorf("no files selected")
+	}
+	rep := media.AnalyzePathsCB("(selection)", paths, cb)
+	if rep.Files == 0 {
+		return "", fmt.Errorf("no readable video files in selection")
+	}
+	rows := []folderRow{{Name: "(selection)", Report: rep}}
+	return renderHTML("(selection)", rows, modeEmbed), nil
 }
 
 // buildRows analyzes a target into report rows. A file → one row; a folder →

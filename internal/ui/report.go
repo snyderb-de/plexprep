@@ -224,13 +224,23 @@ var htmlCols = []string{
 	"folder", "files", "codecs", "method", "size", "→ est", "saved", "time", "work", "why",
 }
 
+// renderMode selects which interactivity ships with the report.
+type renderMode int
+
+const (
+	modeStatic renderMode = iota // file export: download/copy list only
+	modeServe                    // --serve: convert via fetch to local server
+	modeEmbed                    // desktop (Wails): convert via bound Go methods
+)
+
 func writeHTML(path, root string, rows []folderRow) error {
-	return os.WriteFile(path, []byte(renderHTML(root, rows, false)), 0644)
+	return os.WriteFile(path, []byte(renderHTML(root, rows, modeStatic)), 0644)
 }
 
-// renderHTML builds the report document. When serve is true it adds the
-// CONVERT control + options + the live-run JS that POSTs to the local server.
-func renderHTML(root string, rows []folderRow, serve bool) string {
+// renderHTML builds the report document. In serve/embed modes it adds the
+// CONVERT control + options + the matching live-run JS.
+func renderHTML(root string, rows []folderRow, mode renderMode) string {
+	serve := mode != modeStatic
 	var totOrig, totProj int64
 	var totSecs float64
 	var totFiles, totReenc int
@@ -380,8 +390,11 @@ func renderHTML(root string, rows []folderRow, serve bool) string {
 	b.WriteString(filterJS)
 	b.WriteString(selectJS)
 	b.WriteString(sortJS)
-	if serve {
+	switch mode {
+	case modeServe:
 		b.WriteString(serveJS)
+	case modeEmbed:
+		b.WriteString(embedJS)
 	}
 	b.WriteString(`</body></html>`)
 
