@@ -122,3 +122,7 @@ go build -o plexprep.exe .
 ```
 
 Requires `ffmpeg` + `ffprobe` on PATH.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
