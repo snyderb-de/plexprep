@@ -36,6 +36,7 @@ func TestWriteHTMLDrilldown(t *testing.T) {
 		`href="#v-0"`, `href="#v-1"`, `href="#v-summary"`,
 		`.view:target{display:block}`, // pure-CSS drill-down, no JS
 		`data-f="shrink"`, `data-f="grow"`, `agg-reclaim`, // per-view filter
+		`class="pick-cb"`, `data-path=`, `data-folder="v-0"`, `id="selbar"`, // convert-list builder
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("missing %q", want)

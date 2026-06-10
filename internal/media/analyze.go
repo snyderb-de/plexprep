@@ -67,6 +67,7 @@ func EstEncodeSeconds(mi *MediaInfo, p Plan) float64 {
 // used to render the report drill-down page.
 type FileDetail struct {
 	Name      string
+	Path      string // full source path (for the report's convert-list export)
 	Codec     string
 	Width     int
 	Height    int
@@ -199,6 +200,7 @@ func AnalyzePaths(label string, paths []string) *Report {
 		}
 		r.Details = append(r.Details, FileDetail{
 			Name:      filepath.Base(mi.Path),
+			Path:      mi.Path,
 			Codec:     mi.Video.CodecName,
 			Width:     mi.Video.Width,
 			Height:    mi.Video.Height,

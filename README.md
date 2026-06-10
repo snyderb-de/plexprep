@@ -57,21 +57,41 @@ method yourself (`c`).
 Headless (scripting / no TTY):
 
 ```
-plexprep.exe --analyze "Z:\path"           # recommend method + savings + time estimate
-plexprep.exe --report "Z:\library" [out]   # per-subfolder summary → .xlsx + .html
-plexprep.exe --dry "Z:\path" [4k|audio]    # per-file preview, no encoding
-plexprep.exe --run "Z:\path" [4k|audio]    # convert, plain-text progress
-plexprep.exe --run "Z:\path" --replace     # convert in place (source → .original)
+plexprep.exe --analyze "Z:\path"            # recommend method + savings + time estimate
+plexprep.exe --report  "Z:\library" [out]   # per-subfolder summary → .xlsx + .html
+plexprep.exe --dry  <targets…> [4k|audio]   # per-file preview, no encoding
+plexprep.exe --run  <targets…> [4k|audio]   # convert, plain-text progress
+plexprep.exe --run  <targets…> --replace    # convert in place (source → .original)
+plexprep.exe --run  --from list.txt --replace   # convert a hand-picked list
 ```
+
+`<targets…>` for `--dry`/`--run` is any mix of folders (walked recursively)
+and individual files, in any order; `--from <list>` adds newline-separated
+paths from a file (blank lines and `#` comments ignored).
 
 ### Folder report (`--report`)
 
 Point it at a library root; it analyzes every 1st-level subfolder (recursing
-through all their content) and writes a one-row-per-subfolder summary as both
-`plexprep-report.xlsx` and `plexprep-report.html` (a glowing, animated dashboard
-with per-folder recommended method, space savings, and estimated encode time).
-Files sitting loose in the root are ignored. Pass an optional 2nd argument to
-choose the output basename/location.
+through all their content) plus the loose files in the root (a `(root)` row),
+and writes a one-row-per-folder summary as both `plexprep-report.xlsx` and
+`plexprep-report.html` — a retro phosphor-terminal dashboard with per-folder
+recommended method, space savings, and estimated encode time. Pass an optional
+2nd argument to choose the output basename/location.
+
+The HTML report is interactive (pure CSS where possible, no external deps):
+
+- **Drill-down** — click a folder to see its per-file analysis; `:target`-based
+  so it works even with JavaScript disabled.
+- **Filter** — `all` / `shrinks` / `grows` buttons hide rows by outcome and
+  recompute the SUMMARY box live, so you see the real reclaim for just the
+  rows you'd convert. Works in the summary and inside each folder panel.
+- **Convert-list builder** — check off files (or whole folders, or "select
+  shown" to grab the current filter), then **Download .txt** / **Copy paths**.
+  The export is exactly the `--from` format, so:
+
+  ```
+  plexprep.exe --run --replace --from plexprep-convert.txt
+  ```
 
 ## Build
 

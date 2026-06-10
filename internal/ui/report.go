@@ -285,11 +285,11 @@ func writeHTML(path, root string, rows []folderRow) error {
 
 	// Table
 	b.WriteString(`<table><colgroup>`)
-	widths := []string{"17%", "5%", "11%", "6%", "8%", "8%", "17%", "6%", "10%", "12%"}
+	widths := []string{"3%", "16%", "5%", "10%", "6%", "8%", "8%", "16%", "6%", "9%", "12%"}
 	for _, w := range widths {
 		fmt.Fprintf(&b, `<col style="width:%s">`, w)
 	}
-	b.WriteString(`</colgroup><thead><tr>`)
+	b.WriteString(`</colgroup><thead><tr><th class="pick" title="select all in folder">✓</th>`)
 	numCols := map[int]bool{1: true, 4: true, 5: true, 7: true}
 	for i, h := range htmlCols {
 		cls := ""
@@ -311,6 +311,7 @@ func writeHTML(path, root string, rows []folderRow) error {
 			rp.ReencodeCount, rp.AudioOnly, rp.NoOp)
 
 		b.WriteString("<tr>")
+		fmt.Fprintf(&b, `<td class="pick"><input type="checkbox" class="folder-cb" data-folder="v-%d"></td>`, i)
 		name := fmt.Sprintf(`<a class="flink" href="#v-%d">%s</a>`, i, html.EscapeString(row.Name))
 		fmt.Fprintf(&b, `<td class="folder" data-l="folder">%s%s</td>`, name, k4)
 		fmt.Fprintf(&b, `<td class="num" data-l="files" data-sort="%d">%d</td>`, rp.Files, rp.Files)
@@ -326,6 +327,7 @@ func writeHTML(path, root string, rows []folderRow) error {
 		b.WriteString("</tr>")
 	}
 	b.WriteString("</tbody><tfoot><tr>")
+	b.WriteString(`<td class="pick"></td>`)
 	fmt.Fprintf(&b, `<td class="folder" id="tf-label">TOTAL</td><td class="num" id="tf-files">%d</td><td colspan="2"></td>`, totFiles)
 	fmt.Fprintf(&b, `<td class="num" id="tf-orig">%s</td><td class="num" id="tf-proj">%s</td>`, media.HumanBytes(totOrig), media.HumanBytes(totProj))
 	fmt.Fprintf(&b, `<td class="%s" id="tf-saved">%s</td>`, saveTier(totSaved, savePct), savedCell(totSaved, savePct))
@@ -344,7 +346,20 @@ func writeHTML(path, root string, rows []folderRow) error {
 	}
 
 	b.WriteString(`</div></div></main>`)
+
+	// Sticky selection bar: shows the marked set + exports the --from list.
+	b.WriteString(`<div id="selbar" class="selbar" hidden>` +
+		`<span class="seltag">SELECTED</span>` +
+		`<span id="sel-count">0 files</span>` +
+		`<span class="seld">size <b id="sel-size">0 B</b></span>` +
+		`<span class="seld">reclaim <b id="sel-rec" class="save">0 B</b></span>` +
+		`<button id="sel-copy" class="selbtn">copy paths</button>` +
+		`<button id="sel-dl" class="selbtn">download .txt</button>` +
+		`<button id="sel-clear" class="selbtn">clear</button>` +
+		`<span id="sel-msg" class="selmsg"></span></div>`)
+
 	b.WriteString(filterJS)
+	b.WriteString(selectJS)
 	b.WriteString(sortJS)
 	b.WriteString(`</body></html>`)
 
@@ -385,12 +400,12 @@ func detailPanel(b *strings.Builder, idx int, row folderRow) {
 	b.WriteString(filterBar)
 
 	cols := []string{"file", "codec", "res", "size", "→ est", "saved", "time", "work", "why"}
-	widths := []string{"24%", "8%", "8%", "8%", "8%", "16%", "6%", "8%", "14%"}
+	widths := []string{"3%", "22%", "7%", "7%", "8%", "8%", "16%", "5%", "8%", "10%"}
 	b.WriteString(`<table><colgroup>`)
 	for _, w := range widths {
 		fmt.Fprintf(b, `<col style="width:%s">`, w)
 	}
-	b.WriteString(`</colgroup><thead><tr>`)
+	b.WriteString(`</colgroup><thead><tr><th class="pick" title="select shown">✓</th>`)
 	numCols := map[int]bool{3: true, 4: true, 5: true, 6: true}
 	for i, h := range cols {
 		cls := ""
@@ -415,6 +430,8 @@ func detailPanel(b *strings.Builder, idx int, row folderRow) {
 			actCls = "wa"
 		}
 		b.WriteString("<tr>")
+		fmt.Fprintf(b, `<td class="pick"><input type="checkbox" class="pick-cb" data-path="%s" data-size="%d" data-saved="%d"></td>`,
+			html.EscapeString(d.Path), d.OrigBytes, d.SavedBytes())
 		fmt.Fprintf(b, `<td class="folder" data-l="file">%s%s</td>`, html.EscapeString(d.Name), k4)
 		fmt.Fprintf(b, `<td class="codecs" data-l="codec">%s</td>`, html.EscapeString(d.Codec))
 		fmt.Fprintf(b, `<td class="num" data-l="res" data-sort="%d">%s</td>`, d.Width*d.Height, res)
@@ -429,7 +446,7 @@ func detailPanel(b *strings.Builder, idx int, row folderRow) {
 		b.WriteString("</tr>")
 	}
 	if len(rp.Details) == 0 {
-		b.WriteString(`<tr><td colspan="9" class="muted">no readable video files</td></tr>`)
+		b.WriteString(`<tr><td colspan="10" class="muted">no readable video files</td></tr>`)
 	}
 	b.WriteString("</tbody></table>")
 	b.WriteString(`</div>`) // /v-N
@@ -441,7 +458,10 @@ const filterBar = `<div class="filter">filter: ` +
 	`<button class="fbtn active" data-f="all">all</button>` +
 	`<button class="fbtn" data-f="shrink">shrinks &darr;</button>` +
 	`<button class="fbtn" data-f="grow">grows &uarr;</button>` +
-	`<span class="fnote"></span></div>`
+	`<span class="fnote"></span>` +
+	`<span class="fsep">|</span> mark: ` +
+	`<button class="selbtn" data-s="shown">select shown</button>` +
+	`<button class="selbtn" data-s="none">deselect</button></div>`
 
 // filterJS wires every view (summary folders + each drill-down panel) so the
 // all/shrinks/grows buttons hide non-matching rows and recompute that view's
@@ -503,6 +523,72 @@ const filterJS = `<script>
 })();
 </script>`
 
+// selectJS powers the convert-list builder: per-file checkboxes, per-folder
+// and "select shown" toggles, a live SELECTED bar, and copy/download of the
+// chosen file paths in the exact format `plexprep --run --from <list>` wants.
+const selectJS = `<script>
+(function(){
+ var bar=document.getElementById('selbar'); if(!bar) return;
+ function hb(b){b=Math.round(b); if(Math.abs(b)<1024) return b+' B'; var u=['K','M','G','T','P','E'],i=-1,n=Math.abs(b); while(n>=1024&&i<u.length-1){n/=1024;i++;} return (b<0?'-':'')+n.toFixed(2)+' '+u[i]+'B';}
+ function set(id,v){var e=document.getElementById(id); if(e) e.textContent=v;}
+ var cbs=[].slice.call(document.querySelectorAll('.pick-cb'));
+ var fcbs=[].slice.call(document.querySelectorAll('.folder-cb'));
+ function paths(){var o=[]; cbs.forEach(function(c){ if(c.checked) o.push(c.getAttribute('data-path')); }); return o;}
+ function syncFolder(view){
+   if(!view||view.id==='v-summary') return;
+   var fc=document.querySelector('.folder-cb[data-folder="'+view.id+'"]'); if(!fc) return;
+   var all=view.querySelectorAll('.pick-cb'), ck=view.querySelectorAll('.pick-cb:checked');
+   fc.checked = all.length>0 && ck.length===all.length;
+   fc.indeterminate = ck.length>0 && ck.length<all.length;
+ }
+ function recompute(){
+   var n=0,sz=0,sv=0;
+   cbs.forEach(function(c){ if(c.checked){ n++; sz+=(+c.getAttribute('data-size')||0); sv+=(+c.getAttribute('data-saved')||0); } });
+   bar.hidden = n===0;
+   set('sel-count', n+' file'+(n===1?'':'s'));
+   set('sel-size', hb(sz));
+   var rec=document.getElementById('sel-rec');
+   if(sv>=0){ rec.textContent=hb(sv); rec.className='save'; } else { rec.textContent='▲ +'+hb(-sv)+' larger'; rec.className='grow'; }
+   fcbs.forEach(function(fc){ var v=document.getElementById(fc.getAttribute('data-folder')); syncFolder(v); });
+ }
+ cbs.forEach(function(c){ c.addEventListener('change', recompute); });
+ fcbs.forEach(function(fc){ fc.addEventListener('change', function(){
+   var id=fc.getAttribute('data-folder');
+   var list=document.querySelectorAll('#'+id+' .pick-cb');
+   for(var i=0;i<list.length;i++) list[i].checked=fc.checked;
+   recompute();
+ }); });
+ [].forEach.call(document.querySelectorAll('.selbtn[data-s]'), function(btn){
+   btn.addEventListener('click', function(){
+     var view=btn.closest('.view'); if(!view) return; var on=btn.getAttribute('data-s')==='shown';
+     var rows=view.querySelectorAll('tbody tr');
+     for(var i=0;i<rows.length;i++){ var r=rows[i]; if(r.style.display==='none') continue;
+       var c=r.querySelector('.pick-cb'); if(c){ c.checked=on; continue; }
+       var fc=r.querySelector('.folder-cb'); if(fc){ fc.checked=on; var l=document.querySelectorAll('#'+fc.getAttribute('data-folder')+' .pick-cb'); for(var j=0;j<l.length;j++) l[j].checked=on; }
+     }
+     recompute();
+   });
+ });
+ function msg(m){ set('sel-msg', m); setTimeout(function(){set('sel-msg','');}, 3000); }
+ document.getElementById('sel-copy').addEventListener('click', function(){
+   var txt=paths().join('\n'), nn=paths().length;
+   function ok(){ msg('copied '+nn+' paths'); }
+   if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(ok).catch(function(){fb(txt,nn);}); }
+   else fb(txt,nn);
+ });
+ function fb(txt,nn){ var ta=document.createElement('textarea'); ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select(); var done=false; try{done=document.execCommand('copy');}catch(e){} document.body.removeChild(ta); msg(done?('copied '+nn+' paths'):'copy blocked — use download'); }
+ document.getElementById('sel-dl').addEventListener('click', function(){
+   var blob=new Blob([paths().join('\r\n')+'\r\n'],{type:'text/plain'});
+   var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='plexprep-convert.txt';
+   document.body.appendChild(a); a.click(); document.body.removeChild(a); msg('downloaded plexprep-convert.txt');
+ });
+ document.getElementById('sel-clear').addEventListener('click', function(){
+   cbs.forEach(function(c){c.checked=false;}); fcbs.forEach(function(f){f.checked=false; f.indeterminate=false;}); recompute();
+ });
+ recompute();
+})();
+</script>`
+
 // sortJS adds dependency-free click-to-sort to every table on the page.
 // Numeric columns sort by their data-sort raw value, text by visible text.
 const sortJS = `<script>
@@ -541,7 +627,7 @@ body{margin:0;background:var(--bg);color:var(--fg);
 /* faint CRT scanlines */
 .crt{position:fixed;inset:0;z-index:5;pointer-events:none;opacity:.5;
   background:repeating-linear-gradient(0deg,#0000 0 2px,#00000055 2px 3px)}
-main{width:100%;max-width:1900px;margin:0 auto;padding:clamp(14px,3vw,36px)}
+main{width:100%;max-width:1900px;margin:0 auto;padding:clamp(14px,3vw,36px);padding-bottom:90px}
 .term{border:1px solid var(--line);border-radius:6px;background:var(--panel);
   box-shadow:0 0 0 1px #0a1a10,0 18px 60px -30px #000}
 .bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);
@@ -565,6 +651,24 @@ main{width:100%;max-width:1900px;margin:0 auto;padding:clamp(14px,3vw,36px)}
 .fbtn:hover{border-color:var(--fg)}
 .fbtn.active{color:var(--bg);background:var(--fg);border-color:var(--fg);font-weight:700}
 .fnote{color:var(--amber);font-size:11px}
+.fsep{color:var(--line)}
+.selbtn{font:inherit;font-size:11px;cursor:pointer;color:var(--fg);background:#0a0d0a;
+  border:1px solid var(--line);border-radius:3px;padding:3px 10px;text-transform:uppercase;letter-spacing:.5px}
+.selbtn:hover{border-color:var(--fg);color:var(--bright)}
+/* checkbox column */
+th.pick,td.pick{text-align:center;padding:5px 4px}
+.pick-cb,.folder-cb{accent-color:var(--fg);width:14px;height:14px;cursor:pointer;vertical-align:middle}
+th.pick{color:var(--bg);cursor:default}
+/* sticky selection / export bar */
+.selbar{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;align-items:center;gap:14px;
+  flex-wrap:wrap;padding:10px clamp(14px,3vw,36px);background:#0a0d0a;border-top:1px solid var(--fg);
+  box-shadow:0 -10px 30px -20px #000;font-size:12px;color:var(--mid)}
+.seltag{color:var(--bg);background:var(--fg);font-weight:700;padding:2px 8px;border-radius:3px;letter-spacing:.5px}
+#sel-count{color:var(--bright);font-weight:700}
+.seld b{color:var(--bright)}
+.selbar .save{color:var(--fg)}
+.selbar .grow{color:var(--red)}
+.selmsg{color:var(--amber)}
 table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px}
 thead th{text-align:left;padding:5px 8px;color:var(--bg);background:var(--fg);
   text-transform:uppercase;letter-spacing:.5px;font-weight:700;border:1px solid var(--bg)}
