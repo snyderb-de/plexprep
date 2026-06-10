@@ -84,6 +84,7 @@ func Encode(ctx context.Context, mi *MediaInfo, p Plan, outPath string) <-chan P
 
 		args := BuildArgs(mi, p, outPath)
 		cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+		noWindow(cmd)
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
 			ch <- Progress{Err: err, Done: true}

@@ -57,6 +57,7 @@ func Probe(path string) (*MediaInfo, error) {
 		"-show_streams",
 		path,
 	)
+	noWindow(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
