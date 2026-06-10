@@ -1,5 +1,34 @@
 # TODO
 
+## Desktop: lone "(root)" row when a folder has only files (#1)
+
+When scanning a folder that contains only video files and no subfolders (even
+with recursive checked), the report renders a single `(root)` row. Two problems:
+
+- A `(root)` row should only appear when the report has **both** loose root
+  files **and** subfolder rows. If there are no subfolders, show the files
+  directly (flat list, no drill-down wrapper) instead of a lone `(root)` row.
+- Clicking that lone `(root)` row opens a "nested new app window at the home
+  screen" (drill-down `#v-0` inside the iframe appears to re-load the app /
+  home rather than just toggling the panel). Investigate the iframe + `:target`
+  / link behavior for the single-row case.
+
+Affects `buildRows` (root-row logic) and the desktop iframe report. CLI/static
+report likely shows the same lone `(root)` row.
+
+## Desktop: no way back to home from the report (#2)
+
+Once a report is open there's no nav back to the pick/home screen. Add a
+back/home control (titlebar nav or a button in the report chrome) so the user
+can scan a different target without restarting the app.
+
+## Desktop: no cancel during scan (#3)
+
+A scan can't be cancelled — painful for very large libraries. Add a cancel
+button on the scanning screen. Needs backend support: `Scan`/`ScanFiles` should
+honor an abort flag (check in the probe callback, stop early) wired to the same
+`Abort()` (or a dedicated `AbortScan()`), and the frontend returns to home.
+
 ## Audio-only fix bloats the library
 
 Observed on `Z:\TV Shows\True Blood` (80× h264): the Audio-only profile appended
