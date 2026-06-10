@@ -25,9 +25,16 @@ func printUsage() {
 		cmd("plexprep [folder]", "launch the interactive TUI"),
 		cmd("plexprep --analyze <folder>", "recommend method + savings + time"),
 		cmd("plexprep --report  <root> [out]", "per-subfolder report → .xlsx + .html"),
-		cmd("plexprep --dry     <folder> [p]", "per-file preview, no encoding"),
-		cmd("plexprep --run     <folder> [p] [--replace]", "convert headlessly, live progress"),
+		cmd("plexprep --dry     <targets…> [p]", "per-file preview, no encoding"),
+		cmd("plexprep --run     <targets…> [p] [--replace]", "convert headlessly, live progress"),
 		cmd("plexprep --help | -h", "show this help"),
+	}))
+	fmt.Println()
+	fmt.Println(style.Frame("TARGETS  (--dry/--run)", []string{
+		d.S("one or more ") + br.S("folders") + d.S(" (walked) and/or ") + br.S("files"),
+		d.S("--from <list>") + d.S("  read newline-separated paths from a file (# comments ok)"),
+		d.S("e.g. ") + g.S(`plexprep --run --replace A.mkv B.mkv`),
+		d.S("e.g. ") + g.S(`plexprep --run --replace --from shrink.txt`),
 	}))
 	fmt.Println()
 	prof := func(k, name, desc string) string {
@@ -60,9 +67,16 @@ USAGE
                                     (opens on an analysis of [folder] if given)
   plexprep --analyze <folder>       recommend a method + savings + time estimate
   plexprep --report  <root> [out]   analyze each 1st-level subfolder → .xlsx + .html
-  plexprep --dry     <folder> [p]            per-file preview table, no encoding
-  plexprep --run     <folder> [p] [--replace] [--delete]  convert headlessly
+  plexprep --dry     <targets…> [p]          per-file preview table, no encoding
+  plexprep --run     <targets…> [p] [--replace] [--delete]  convert headlessly
   plexprep --help | -h                       show this help
+
+TARGETS  (--dry / --run)
+  <targets…> is one or more folders (walked recursively) and/or individual
+  files, in any order. Add --from <list> to read newline-separated paths from
+  a file (blank lines and # comments are ignored). Examples:
+    plexprep --run --replace "A.mkv" "B.mkv"
+    plexprep --run --replace --from shrink.txt
 
 PROFILE [p]  (headless --dry/--run only; default: zero-transcode)
   (none)   Zero-Transcode (SD/HD)   x264 CRF18 for legacy, copy modern
@@ -121,8 +135,11 @@ func main() {
 			prof := media.ProfileZeroTranscode
 			replace := false
 			purge := false
-			folder := ""
-			for _, a := range os.Args[2:] {
+			listFile := ""
+			var targets []string
+			args := os.Args[2:]
+			for i := 0; i < len(args); i++ {
+				a := args[i]
 				switch a {
 				case "4k":
 					prof = media.Profile4K
@@ -132,24 +149,51 @@ func main() {
 					replace = true
 				case "--delete", "--purge":
 					purge = true
+				case "--from":
+					if i+1 < len(args) {
+						i++
+						listFile = args[i]
+					}
 				default:
-					if folder == "" && !strings.HasPrefix(a, "--") {
-						folder = a
+					if !strings.HasPrefix(a, "--") {
+						targets = append(targets, a)
 					}
 				}
 			}
-			if folder == "" {
-				fmt.Fprintf(os.Stderr, "error: %s needs a folder\n\n%s", mode, usage)
+
+			// Build the working set: explicit files/dirs + an optional --from list.
+			if listFile != "" {
+				lines, err := media.ReadListFile(listFile)
+				if err != nil {
+					fmt.Fprintln(os.Stderr, "error: --from:", err)
+					os.Exit(1)
+				}
+				targets = append(targets, lines...)
+			}
+			if len(targets) == 0 {
+				fmt.Fprintf(os.Stderr, "error: %s needs a folder, one or more files, or --from <list>\n\n%s", mode, usage)
 				os.Exit(2)
 			}
-			var err error
+			paths, err := media.ResolveTargets(targets)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "error:", err)
+				os.Exit(1)
+			}
+
+			// Label for the banner: a lone folder shows its path, otherwise a count.
+			label := fmt.Sprintf("%d files", len(paths))
+			if len(targets) == 1 {
+				label = fmt.Sprintf("%q", targets[0])
+			}
+
 			switch mode {
 			case "--analyze":
-				err = ui.AnalyzeReport(folder)
+				// --analyze stays folder-oriented (one root).
+				err = ui.AnalyzeReport(targets[0])
 			case "--dry":
-				err = ui.DryRun(folder, prof)
+				err = ui.DryRunPaths(label, paths, prof)
 			case "--run":
-				err = ui.RunHeadless(folder, prof, replace, purge)
+				err = ui.RunHeadlessPaths(label, paths, prof, replace, purge)
 			}
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "error:", err)

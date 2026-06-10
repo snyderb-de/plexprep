@@ -1,6 +1,7 @@
 package media
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -80,6 +81,60 @@ func FindVideosTop(root string) ([]string, error) {
 		out = append(out, filepath.Join(root, base))
 	}
 	sort.Strings(out)
+	return out, nil
+}
+
+// ResolveTargets turns a mixed list of files and directories into a flat,
+// de-duplicated list of video paths. Directories are walked recursively
+// (FindVideos); files are taken as-is if they carry a video extension. Order
+// follows the input, with directory contents sorted.
+func ResolveTargets(targets []string) ([]string, error) {
+	var out []string
+	seen := map[string]bool{}
+	add := func(p string) {
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	for _, t := range targets {
+		fi, err := os.Stat(t)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", t, err)
+		}
+		if fi.IsDir() {
+			sub, err := FindVideos(t)
+			if err != nil {
+				return nil, err
+			}
+			for _, p := range sub {
+				add(p)
+			}
+			continue
+		}
+		if !videoExts[strings.ToLower(filepath.Ext(t))] {
+			return nil, fmt.Errorf("%s: not a video file", t)
+		}
+		add(t)
+	}
+	return out, nil
+}
+
+// ReadListFile reads newline-separated paths from a file, skipping blanks and
+// "#" comment lines. Surrounding quotes/whitespace are trimmed per line.
+func ReadListFile(path string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, line := range strings.Split(string(data), "\n") {
+		s := strings.TrimSpace(strings.Trim(strings.TrimSpace(line), `"`))
+		if s == "" || strings.HasPrefix(s, "#") {
+			continue
+		}
+		out = append(out, s)
+	}
 	return out, nil
 }
 

@@ -25,11 +25,15 @@ func DryRun(root string, profile media.Profile) error {
 	if err != nil {
 		return err
 	}
+	return DryRunPaths(fmt.Sprintf(`"%s"`, root), paths, profile)
+}
 
-	banner(fmt.Sprintf(`--dry "%s"`, root))
+// DryRunPaths prints a styled per-file plan for an explicit list of files.
+func DryRunPaths(label string, paths []string, profile media.Profile) error {
+	banner(fmt.Sprintf(`--dry %s`, label))
 
 	if len(paths) == 0 {
-		fmt.Println(style.Frame("DRY RUN", []string{style.Amber.S("no video files found under " + root)}))
+		fmt.Println(style.Frame("DRY RUN", []string{style.Amber.S("no video files to preview")}))
 		fmt.Println()
 		return nil
 	}

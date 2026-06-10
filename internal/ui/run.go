@@ -9,8 +9,8 @@ import (
 	"plexprep/internal/style"
 )
 
-// RunHeadless converts every non-noop file in root under profile with a styled,
-// live progress display.
+// RunHeadless converts every non-noop file under root (recursively) with a
+// styled, live progress display.
 //
 // When replace is true, each output takes its source's name (as .mkv) and the
 // source is renamed to "<name>.original" as a backup. Otherwise the output is
@@ -20,7 +20,12 @@ func RunHeadless(root string, profile media.Profile, replace, purge bool) error 
 	if err != nil {
 		return err
 	}
+	return RunHeadlessPaths(fmt.Sprintf(`"%s"`, root), paths, profile, replace, purge)
+}
 
+// RunHeadlessPaths converts an explicit list of files (already resolved). label
+// is shown in the banner. Same replace/purge semantics as RunHeadless.
+func RunHeadlessPaths(label string, paths []string, profile media.Profile, replace, purge bool) error {
 	flags := ""
 	if replace {
 		flags += " --replace"
@@ -28,10 +33,10 @@ func RunHeadless(root string, profile media.Profile, replace, purge bool) error 
 	if purge {
 		flags += " --delete"
 	}
-	banner(fmt.Sprintf(`--run "%s"%s`, root, flags))
+	banner(fmt.Sprintf(`--run %s%s`, label, flags))
 
 	if len(paths) == 0 {
-		fmt.Println(style.Frame("RUN", []string{style.Amber.S("no video files found under " + root)}))
+		fmt.Println(style.Frame("RUN", []string{style.Amber.S("no video files to convert")}))
 		fmt.Println()
 		return nil
 	}
