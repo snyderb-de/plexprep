@@ -84,6 +84,11 @@ func FindVideosTop(root string) ([]string, error) {
 	return out, nil
 }
 
+// IsVideoExt reports whether name has a recognized video container extension.
+func IsVideoExt(name string) bool {
+	return videoExts[strings.ToLower(filepath.Ext(name))]
+}
+
 // ResolveTargets turns a mixed list of files and directories into a flat,
 // de-duplicated list of video paths. Directories are walked recursively
 // (FindVideos); files are taken as-is if they carry a video extension. Order

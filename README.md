@@ -54,6 +54,28 @@ The interactive flow opens with an **Analysis** screen: recommended method,
 total space savings, and an estimated encode time — accept it (Enter) or pick a
 method yourself (`c`).
 
+### Web UI (`--serve`)
+
+```
+plexprep.exe --serve                 # opens browser, pick a target to scan
+plexprep.exe --serve "Y:\Movies"     # scan straight into the report
+plexprep.exe --serve --port 8080     # choose the port (default 7777)
+```
+
+Starts a local server (binds `127.0.0.1` only) and opens your browser:
+
+1. **Pick** a folder or file (server-side directory browser) with a
+   recursive-scan toggle.
+2. **Scan** runs async with a live progress bar — the page never blocks on a
+   whole-tree probe.
+3. **Select** files in the interactive report (same drill-down, filter, and
+   checkboxes as the static report).
+4. **Convert** — choose profile + `replace`/`delete`, then watch a live status
+   dashboard (per-file + overall bars, speed, ETA, running reclaim, log).
+
+Conversion runs server-side using the same engine as `--run`; output rules are
+identical (sibling `(plexprep).mkv` by default, or in-place with `replace`).
+
 Headless (scripting / no TTY):
 
 ```

@@ -130,6 +130,12 @@ func Analyze(root string) (*Report, error) {
 
 // AnalyzePaths analyzes a fixed set of files (already discovered) under a label.
 func AnalyzePaths(label string, paths []string) *Report {
+	return AnalyzePathsCB(label, paths, nil)
+}
+
+// AnalyzePathsCB is AnalyzePaths with a per-file callback invoked after each
+// probe (used to drive scan-progress UI). cb may be nil.
+func AnalyzePathsCB(label string, paths []string, cb func(name string)) *Report {
 	r := &Report{Root: label, Codecs: map[string]int{}}
 
 	// First pass: probe everything, learn the content mix.
@@ -138,6 +144,9 @@ func AnalyzePaths(label string, paths []string) *Report {
 	anyLegacy := false
 	for _, p := range paths {
 		mi, err := Probe(p)
+		if cb != nil {
+			cb(filepath.Base(p))
+		}
 		if err != nil {
 			r.ProbeErrors++
 			continue

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"plexprep/internal/media"
@@ -23,6 +24,7 @@ func printUsage() {
 	cmd := func(c, desc string) string { return "  " + g.S(style.Pad(c, 46)) + d.S(desc) }
 	fmt.Println(style.Frame("USAGE", []string{
 		cmd("plexprep [folder]", "launch the interactive TUI"),
+		cmd("plexprep --serve   [folder] [--port N]", "local web UI: pick → select → convert"),
 		cmd("plexprep --analyze <folder>", "recommend method + savings + time"),
 		cmd("plexprep --report  <root> [out]", "per-subfolder report → .xlsx + .html"),
 		cmd("plexprep --dry     <targets…> [p]", "per-file preview, no encoding"),
@@ -65,6 +67,9 @@ Original audio is kept lossless and an AAC stereo fallback is appended.
 USAGE
   plexprep [folder]                 launch the interactive TUI
                                     (opens on an analysis of [folder] if given)
+  plexprep --serve [folder] [--port N]   local web UI in your browser:
+                                    pick a target, select files, convert with
+                                    a live status dashboard (binds 127.0.0.1)
   plexprep --analyze <folder>       recommend a method + savings + time estimate
   plexprep --report  <root> [out]   analyze each 1st-level subfolder → .xlsx + .html
   plexprep --dry     <targets…> [p]          per-file preview table, no encoding
@@ -102,6 +107,29 @@ func main() {
 			printUsage()
 			return
 		}
+	}
+
+	// Local web UI: plexprep --serve [path] [--port N]
+	if len(os.Args) > 1 && os.Args[1] == "--serve" {
+		root, port := "", 7777
+		args := os.Args[2:]
+		for i := 0; i < len(args); i++ {
+			a := args[i]
+			switch {
+			case a == "--port" && i+1 < len(args):
+				i++
+				if n, e := strconv.Atoi(args[i]); e == nil {
+					port = n
+				}
+			case !strings.HasPrefix(a, "--") && root == "":
+				root = a
+			}
+		}
+		if err := ui.Serve(root, port); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	// Headless folder report: plexprep --report <root> [output-basename]

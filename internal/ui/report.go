@@ -225,6 +225,12 @@ var htmlCols = []string{
 }
 
 func writeHTML(path, root string, rows []folderRow) error {
+	return os.WriteFile(path, []byte(renderHTML(root, rows, false)), 0644)
+}
+
+// renderHTML builds the report document. When serve is true it adds the
+// CONVERT control + options + the live-run JS that POSTs to the local server.
+func renderHTML(root string, rows []folderRow, serve bool) string {
 	var totOrig, totProj int64
 	var totSecs float64
 	var totFiles, totReenc int
@@ -255,6 +261,10 @@ func writeHTML(path, root string, rows []folderRow) error {
 	b.WriteString(`<meta name="viewport" content="width=device-width,initial-scale=1">`)
 	fmt.Fprintf(&b, "<title>plexprep report :: %s</title>", html.EscapeString(filepath.Base(root)))
 	b.WriteString(reportCSS)
+	if serve {
+		b.WriteString(serveCSS)
+		fmt.Fprintf(&b, `<meta name="pp-root" content="%s">`, html.EscapeString(root))
+	}
 	b.WriteString(`</head><body><div class="crt"></div><main><div class="term">`)
 
 	// Title bar
@@ -348,22 +358,34 @@ func writeHTML(path, root string, rows []folderRow) error {
 	b.WriteString(`</div></div></main>`)
 
 	// Sticky selection bar: shows the marked set + exports the --from list.
+	convertBtn := ""
+	if serve {
+		convertBtn = `<button id="sel-convert" class="selbtn cta">convert &rarr;</button>`
+	}
 	b.WriteString(`<div id="selbar" class="selbar" hidden>` +
 		`<span class="seltag">SELECTED</span>` +
 		`<span id="sel-count">0 files</span>` +
 		`<span class="seld">size <b id="sel-size">0 B</b></span>` +
 		`<span class="seld">reclaim <b id="sel-rec" class="save">0 B</b></span>` +
+		convertBtn +
 		`<button id="sel-copy" class="selbtn">copy paths</button>` +
 		`<button id="sel-dl" class="selbtn">download .txt</button>` +
 		`<button id="sel-clear" class="selbtn">clear</button>` +
 		`<span id="sel-msg" class="selmsg"></span></div>`)
 
+	if serve {
+		b.WriteString(convertOverlays)
+	}
+
 	b.WriteString(filterJS)
 	b.WriteString(selectJS)
 	b.WriteString(sortJS)
+	if serve {
+		b.WriteString(serveJS)
+	}
 	b.WriteString(`</body></html>`)
 
-	return os.WriteFile(path, []byte(b.String()), 0644)
+	return b.String()
 }
 
 // detailPanel writes one folder's per-file view into b. Visibility is driven by
