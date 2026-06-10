@@ -1,5 +1,17 @@
 # TODO
 
+## Desktop: convert needs an "abort now" in addition to "abort after current"
+
+The status dashboard's `st-abort` only stops *after* the current file
+finishes (`Convert`'s loop checks `a.abort` between files). For a long
+encode, add an immediate "abort now" that kills the in-flight ffmpeg
+process too (cancel the `Encode` context / `cmd.Process.Kill()`) and
+discards the partial `tmp` output.
+
+Affects `desktop/app.go` Convert (`a.abort` check + `media.Encode`),
+`internal/media/encode.go`, and the status dashboard buttons in
+`internal/ui/serve_assets.go` (embedJS `st-abort`).
+
 ## Desktop: convert progress bars don't track real progress
 
 During convert, the per-file progress bar (and the overall bar) jump straight
