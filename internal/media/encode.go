@@ -112,10 +112,11 @@ func Encode(ctx context.Context, mi *MediaInfo, p Plan, outPath string) <-chan P
 			case "speed":
 				speed = v
 			case "out_time_us", "out_time_ms":
+				// ffmpeg emits both keys per progress line carrying the same
+				// microsecond value (out_time_ms is mislabelled). Treat both
+				// as microseconds — multiplying out_time_ms by 1000 here used
+				// to overshoot the total and snap the bar to 100% instantly.
 				us, _ := strconv.ParseFloat(v, 64)
-				if k == "out_time_ms" {
-					us *= 1000 // ffmpeg mislabels; out_time_ms is microseconds in some builds
-				}
 				frac := 0.0
 				if totalUs > 0 {
 					frac = us / totalUs

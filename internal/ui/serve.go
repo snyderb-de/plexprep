@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,11 +23,12 @@ import (
 // server holds the serve-mode state: a single in-flight convert job guarded by
 // busy, and an abort flag the status page can flip.
 type server struct {
-	root  string
-	mu    sync.Mutex
-	busy  bool
-	abort bool
-	scans map[string]string // scan id -> rendered report HTML
+	root         string
+	mu           sync.Mutex
+	busy         bool
+	abort        bool
+	cancelEncode context.CancelFunc
+	scans        map[string]string // scan id -> rendered report HTML
 }
 
 // Serve starts the local web UI: a picker, the interactive report, and a live
@@ -41,6 +43,7 @@ func Serve(root string, port int) error {
 	mux.HandleFunc("/api/scan", s.handleScan)
 	mux.HandleFunc("/api/convert", s.handleConvert)
 	mux.HandleFunc("/api/abort", s.handleAbort)
+	mux.HandleFunc("/api/abort-now", s.handleAbortNow)
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
@@ -364,6 +367,19 @@ func (s *server) handleAbort(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleAbortNow stops the conversion immediately, killing the in-flight
+// ffmpeg process and discarding its partial output.
+func (s *server) handleAbortNow(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	s.abort = true
+	cancel := s.cancelEncode
+	s.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleConvert runs the selected files sequentially, streaming newline-JSON
 // progress events the status page consumes.
 func (s *server) handleConvert(w http.ResponseWriter, r *http.Request) {
@@ -438,12 +454,22 @@ func (s *server) handleConvert(w http.ResponseWriter, r *http.Request) {
 
 		tmp := media.TempPath(p)
 		t0 := time.Now()
+		ectx, cancel := context.WithCancel(ctx)
+		s.mu.Lock()
+		s.cancelEncode = cancel
+		s.mu.Unlock()
+
 		failed := false
-		for pr := range media.Encode(ctx, it.Info, it.Plan, tmp) {
+		for pr := range media.Encode(ectx, it.Info, it.Plan, tmp) {
 			if pr.Err != nil {
 				failed = true
-				fail++
-				emit(map[string]any{"t": "fail", "name": name, "err": pr.Err.Error()})
+				s.mu.Lock()
+				abortedNow := s.abort
+				s.mu.Unlock()
+				if !abortedNow {
+					fail++
+					emit(map[string]any{"t": "fail", "name": name, "err": pr.Err.Error()})
+				}
 				break
 			}
 			if pr.Done {
@@ -455,8 +481,16 @@ func (s *server) handleConvert(w http.ResponseWriter, r *http.Request) {
 			}
 			emit(map[string]any{"t": "progress", "frac": pr.Fraction, "speed": pr.Speed, "eta": eta})
 		}
+		cancel()
+		s.mu.Lock()
+		s.cancelEncode = nil
+		abortedNow := s.abort
+		s.mu.Unlock()
 		if failed {
 			_ = os.Remove(tmp)
+			if abortedNow {
+				break
+			}
 			continue
 		}
 

@@ -16,11 +16,12 @@ import (
 // App is the Wails-bound backend. It reuses the same scan/convert engine as the
 // CLI and streams progress to the frontend via Wails events.
 type App struct {
-	ctx       context.Context
-	mu        sync.Mutex
-	busy      bool
-	abort     bool
-	abortScan bool
+	ctx          context.Context
+	mu           sync.Mutex
+	busy         bool
+	abort        bool
+	abortScan    bool
+	cancelEncode context.CancelFunc
 }
 
 func NewApp() *App { return &App{} }
@@ -122,6 +123,18 @@ func (a *App) Abort() {
 	a.mu.Unlock()
 }
 
+// AbortNow requests the running conversion stop immediately, killing the
+// in-flight ffmpeg process and discarding its partial output.
+func (a *App) AbortNow() {
+	a.mu.Lock()
+	a.abort = true
+	cancel := a.cancelEncode
+	a.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
 // AbortScan requests the running scan stop after the current file probe.
 func (a *App) AbortScan() {
 	a.mu.Lock()
@@ -191,12 +204,22 @@ func (a *App) Convert(paths []string, profile string, replace, del bool) {
 
 		tmp := media.TempPath(p)
 		t0 := time.Now()
+		ectx, cancel := context.WithCancel(a.ctx)
+		a.mu.Lock()
+		a.cancelEncode = cancel
+		a.mu.Unlock()
+
 		failed := false
-		for pr := range media.Encode(a.ctx, it.Info, it.Plan, tmp) {
+		for pr := range media.Encode(ectx, it.Info, it.Plan, tmp) {
 			if pr.Err != nil {
 				failed = true
-				fail++
-				emit(map[string]any{"t": "fail", "name": name, "err": pr.Err.Error()})
+				a.mu.Lock()
+				abortedNow := a.abort
+				a.mu.Unlock()
+				if !abortedNow {
+					fail++
+					emit(map[string]any{"t": "fail", "name": name, "err": pr.Err.Error()})
+				}
 				break
 			}
 			if pr.Done {
@@ -208,8 +231,16 @@ func (a *App) Convert(paths []string, profile string, replace, del bool) {
 			}
 			emit(map[string]any{"t": "progress", "frac": pr.Fraction, "speed": pr.Speed, "eta": eta})
 		}
+		cancel()
+		a.mu.Lock()
+		a.cancelEncode = nil
+		abortedNow := a.abort
+		a.mu.Unlock()
 		if failed {
 			_ = os.Remove(tmp)
+			if abortedNow {
+				break
+			}
 			continue
 		}
 

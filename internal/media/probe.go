@@ -2,6 +2,7 @@ package media
 
 import (
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -58,8 +59,13 @@ func Probe(path string) (*MediaInfo, error) {
 		path,
 	)
 	noWindow(cmd)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return nil, fmt.Errorf("%w: %s", err, msg)
+		}
 		return nil, err
 	}
 	var po probeOutput

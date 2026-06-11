@@ -39,6 +39,13 @@ func AnalyzeReport(root string) error {
 	}
 	fmt.Println(style.Frame("ANALYSIS", lines))
 	fmt.Println()
+	if len(r.ProbeErrorDetails) > 0 {
+		fmt.Println(style.Red.S("  unreadable files:"))
+		for _, pe := range r.ProbeErrorDetails {
+			fmt.Println(style.Dim.S("   - ") + style.Mid.S(pe.Path) + style.Dim.S("  ("+style.Trunc(pe.Msg, 80)+")"))
+		}
+		fmt.Println()
+	}
 	fmt.Println(style.Dim.S("  // next: ") +
 		style.Green.S("plexprep \""+root+"\"") + style.Dim.S(" (interactive)  ·  ") +
 		style.Green.S("--dry") + style.Dim.S(" to list files  ·  ") +

@@ -30,7 +30,8 @@ const convertOverlays = `
      <div class="meterbig"><span id="st-obar" class="meterfill ofill"></span></div></div>
    <div class="statlog" id="st-log"></div>
    <div class="statbtns"><button id="st-close" class="selbtn cta" hidden>done &mdash; close</button>
-     <button id="st-abort" class="selbtn">abort after current</button></div>
+     <button id="st-abort" class="selbtn">abort after current</button>
+     <button id="st-abort-now" class="selbtn red">abort now</button></div>
  </div>
 </div></div>`
 
@@ -38,6 +39,8 @@ const convertOverlays = `
 const serveCSS = `<style>
 .selbtn.cta{color:var(--bg);background:var(--amber);border-color:var(--amber);font-weight:700}
 .selbtn.cta:hover{background:var(--bright);border-color:var(--bright);color:var(--bg)}
+.selbtn.red{color:var(--red);border-color:var(--red)}
+.selbtn.red:hover{background:var(--red);color:var(--bg)}
 .amber{color:var(--amber)}.red{color:var(--red)}.dimx{color:var(--dim)}
 .modal{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;
   background:#000a;backdrop-filter:blur(2px);padding:20px}
@@ -112,7 +115,7 @@ const serveJS = `<script>
    var p=picked(); if(!p.length) return;
    var prof=(document.querySelector('input[name=prof]:checked')||{}).value||'';
    var body={root:root, profile:prof, replace:$('opt-replace').checked, delete:$('opt-delete').checked, paths:p.map(function(x){return x.path;})};
-   $('opts').hidden=true; $('status').hidden=false; $('st-close').hidden=true; abort=false;
+   $('opts').hidden=true; $('status').hidden=false; $('st-close').hidden=true; $('st-abort').hidden=false; $('st-abort-now').hidden=false; abort=false;
    $('st-log').innerHTML=''; $('st-phase').textContent='CONVERTING'; startClock();
    var s={total:p.length,done:0,ok:0,fail:0,skip:0,reclaim:0,eta:0}; grid(s);
    logln('dimx','POST /api/convert · '+p.length+' files · profile='+(prof||'zero')+(body.replace?' · replace':'')+(body.delete?' · delete':''));
@@ -143,10 +146,11 @@ const serveJS = `<script>
    else if(ev.t==='fail'){ s.done++; s.fail++; logln('err','✘ '+ev.name+'  '+ev.err); grid(s); }
    else if(ev.t==='summary'){ s.reclaim=ev.reclaim; s.ok=ev.ok; s.fail=ev.fail; s.skip=ev.skip; grid(s); }
  }
- function finish(s){ stopClock(); $('st-phase').textContent='DONE'; $('st-obar').style.width='100%'; $('st-abort').hidden=true; $('st-close').hidden=false; logln('ok','— complete · '+s.ok+' converted · reclaimed '+hb(s.reclaim)); }
+ function finish(s){ stopClock(); $('st-phase').textContent='DONE'; $('st-obar').style.width='100%'; $('st-abort').hidden=true; $('st-abort-now').hidden=true; $('st-close').hidden=false; logln('ok','— complete · '+s.ok+' converted · reclaimed '+hb(s.reclaim)); }
 
  var sc=$('st-close'); if(sc) sc.addEventListener('click', function(){ location.reload(); });
  var sa=$('st-abort'); if(sa) sa.addEventListener('click', function(){ abort=true; sa.textContent='aborting…'; fetch('/api/abort',{method:'POST'}); });
+ var san=$('st-abort-now'); if(san) san.addEventListener('click', function(){ abort=true; san.textContent='aborting…'; fetch('/api/abort-now',{method:'POST'}); });
 })();
 </script>`
 
@@ -238,7 +242,7 @@ const embedJS = `<script>
    else if(ev.t==='fail'){ s.done++; s.fail++; logln('err','✘ '+ev.name+'  '+ev.err); grid(); }
    else if(ev.t==='summary'){ s.ok=ev.ok; s.fail=ev.fail; s.skip=ev.skip; s.reclaim=ev.reclaim; grid(); finish(); }
  }
- function finish(){ stopClock(); $('st-phase').textContent='DONE'; $('st-obar').style.width='100%'; $('st-abort').hidden=true; $('st-close').hidden=false; logln('ok','— complete · '+s.ok+' converted · reclaimed '+hb(s.reclaim)); }
+ function finish(){ stopClock(); $('st-phase').textContent='DONE'; $('st-obar').style.width='100%'; $('st-abort').hidden=true; $('st-abort-now').hidden=true; $('st-close').hidden=false; logln('ok','— complete · '+s.ok+' converted · reclaimed '+hb(s.reclaim)); }
 
  if(RT&&RT.EventsOn) RT.EventsOn('pp:convert', handle);
  var os_=$('opt-start');
@@ -246,7 +250,7 @@ const embedJS = `<script>
    var p=picked(); if(!p.length) return;
    if(!APP){ alert('desktop bridge unavailable'); return; }
    var prof=(document.querySelector('input[name=prof]:checked')||{}).value||'';
-   $('opts').hidden=true; $('status').hidden=false; $('st-close').hidden=true; $('st-abort').hidden=false;
+   $('opts').hidden=true; $('status').hidden=false; $('st-close').hidden=true; $('st-abort').hidden=false; $('st-abort-now').hidden=false;
    $('st-log').innerHTML=''; $('st-phase').textContent='CONVERTING';
    s={total:p.length,done:0,ok:0,fail:0,skip:0,reclaim:0,eta:0}; startClock(); grid();
    logln('dimx','convert '+p.length+' files · profile='+(prof||'zero')+($('opt-replace').checked?' · replace':'')+($('opt-delete').checked?' · delete':''));
@@ -254,6 +258,7 @@ const embedJS = `<script>
  });
  var sc=$('st-close'); if(sc) sc.addEventListener('click', function(){ if(P!==window&&P.ppDone){ P.ppDone(); } else { location.reload(); } });
  var sa=$('st-abort'); if(sa) sa.addEventListener('click', function(){ if(APP&&APP.Abort) APP.Abort(); sa.textContent='aborting…'; });
+ var san=$('st-abort-now'); if(san) san.addEventListener('click', function(){ if(APP&&APP.AbortNow) APP.AbortNow(); san.textContent='aborting…'; });
 })();
 </script>`
 

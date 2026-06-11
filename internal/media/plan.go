@@ -1,6 +1,9 @@
 package media
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Profile is a conversion strategy chosen by the user.
 type Profile int
@@ -78,9 +81,16 @@ func (mi *MediaInfo) interlaced() bool {
 	return false
 }
 
-func (mi *MediaInfo) hasAACStereo() bool {
+// hasCompatibleStereo reports whether mi already has a stereo-or-mono track
+// in a codec that direct-plays on virtually every Plex client (AAC, AC3,
+// E-AC3, MP3) — i.e. an AAC fallback would be redundant.
+func (mi *MediaInfo) hasCompatibleStereo() bool {
 	for _, a := range mi.Audio {
-		if a.CodecName == "aac" && a.Channels <= 2 {
+		if a.Channels > 2 {
+			continue
+		}
+		switch a.CodecName {
+		case "aac", "ac3", "eac3", "mp3":
 			return true
 		}
 	}
@@ -120,14 +130,17 @@ func BuildPlan(mi *MediaInfo, profile Profile) Plan {
 		p.Reasons = append(p.Reasons, "deinterlace")
 	}
 
-	if !mi.hasAACStereo() {
+	if !mi.hasCompatibleStereo() {
 		p.AddAAC = true
 		p.Reasons = append(p.Reasons, "+AAC stereo fallback")
 	} else {
-		p.Reasons = append(p.Reasons, "AAC already present")
+		p.Reasons = append(p.Reasons, "compatible stereo audio present")
 	}
 
 	p.ProjectedBytes = projectSize(mi, p)
+	if p.SavedBytes() < 0 {
+		p.Reasons = append(p.Reasons, fmt.Sprintf("⚠ grows by ~%s", HumanBytes(-p.SavedBytes())))
+	}
 	return p
 }
 

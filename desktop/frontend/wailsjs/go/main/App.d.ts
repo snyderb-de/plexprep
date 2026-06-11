@@ -3,6 +3,8 @@
 
 export function Abort():Promise<void>;
 
+export function AbortNow():Promise<void>;
+
 export function AbortScan():Promise<void>;
 
 export function Browse():Promise<string>;

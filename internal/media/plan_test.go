@@ -1,6 +1,9 @@
 package media
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func mi(codec string, w, h int, field string, audio ...Stream) *MediaInfo {
 	return &MediaInfo{
@@ -12,8 +15,10 @@ func mi(codec string, w, h int, field string, audio ...Stream) *MediaInfo {
 	}
 }
 
-func aac() Stream { return Stream{CodecName: "aac", CodecType: "audio", Channels: 2} }
-func ac3() Stream { return Stream{CodecName: "ac3", CodecType: "audio", Channels: 6} }
+func aac() Stream       { return Stream{CodecName: "aac", CodecType: "audio", Channels: 2} }
+func ac3() Stream       { return Stream{CodecName: "ac3", CodecType: "audio", Channels: 6} }
+func ac3Stereo() Stream { return Stream{CodecName: "ac3", CodecType: "audio", Channels: 2} }
+func dts() Stream       { return Stream{CodecName: "dts", CodecType: "audio", Channels: 6} }
 
 func TestPlanLegacyZeroTranscode(t *testing.T) {
 	p := BuildPlan(mi("mpeg2video", 720, 480, "tt", ac3()), ProfileZeroTranscode)
@@ -58,6 +63,39 @@ func TestPlanAudioOnlyNeverReencodes(t *testing.T) {
 	}
 	if !p.AddAAC {
 		t.Error("audio-only should still add AAC when missing")
+	}
+}
+
+func TestPlanCompatibleStereoSkipsAAC(t *testing.T) {
+	p := BuildPlan(mi("h264", 1920, 1080, "progressive", ac3Stereo()), ProfileAudioOnly)
+	if p.AddAAC {
+		t.Error("ac3 stereo already direct-plays; should not add AAC fallback")
+	}
+	if !p.NoOp() {
+		t.Errorf("audio-only with compatible stereo should be a no-op, got %+v", p)
+	}
+}
+
+func TestPlanIncompatibleAudioGetsAAC(t *testing.T) {
+	p := BuildPlan(mi("h264", 1920, 1080, "progressive", dts()), ProfileAudioOnly)
+	if !p.AddAAC {
+		t.Error("dts-only (multichannel, no stereo fallback) should add AAC")
+	}
+}
+
+func TestPlanGrowWarning(t *testing.T) {
+	p := BuildPlan(mi("h264", 1920, 1080, "progressive", dts()), ProfileAudioOnly)
+	if p.SavedBytes() >= 0 {
+		t.Fatalf("expected projected size to grow when adding AAC with no video savings, got %+v", p)
+	}
+	found := false
+	for _, r := range p.Reasons {
+		if strings.Contains(r, "grows by") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a grow-warning reason, got %v", p.Reasons)
 	}
 }
 

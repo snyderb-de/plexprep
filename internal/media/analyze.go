@@ -88,11 +88,19 @@ func (d FileDetail) SavedPct() float64 {
 	return float64(d.SavedBytes()) / float64(d.OrigBytes) * 100
 }
 
+// ProbeError records a per-file ffprobe failure for diagnostics.
+type ProbeError struct {
+	Path string
+	Msg  string
+}
+
 // Report is the folder-level analysis.
 type Report struct {
 	Root        string
 	Files       int
 	ProbeErrors int
+
+	ProbeErrorDetails []ProbeError // path + ffprobe error for unreadable files
 
 	Recommended Profile
 	Why         string
@@ -152,6 +160,7 @@ func AnalyzePathsCB(label string, paths []string, cb func(name string) bool) *Re
 		}
 		if err != nil {
 			r.ProbeErrors++
+			r.ProbeErrorDetails = append(r.ProbeErrorDetails, ProbeError{Path: p, Msg: err.Error()})
 			continue
 		}
 		infos = append(infos, mi)

@@ -1,54 +1,40 @@
 # TODO
 
-## Desktop: convert needs an "abort now" in addition to "abort after current"
+## Desktop: convert progress bar — extra animation/flourish (TBD)
 
-The status dashboard's `st-abort` only stops *after* the current file
-finishes (`Convert`'s loop checks `a.abort` between files). For a long
-encode, add an immediate "abort now" that kills the in-flight ffmpeg
-process too (cancel the `Encode` context / `cmd.Process.Kill()`) and
-discards the partial `tmp` output.
+The per-file/overall progress bars now track real ffmpeg progress (fixed: a
+`-progress` line was double-counted via `out_time_us`+`out_time_ms`, snapping
+the bar to 100% instantly). Still want some extra animation/flourish on the
+bars — design later.
 
-Affects `desktop/app.go` Convert (`a.abort` check + `media.Encode`),
-`internal/media/encode.go`, and the status dashboard buttons in
-`internal/ui/serve_assets.go` (embedJS `st-abort`).
-
-## Desktop: convert progress bars don't track real progress
-
-During convert, the per-file progress bar (and the overall bar) jump straight
-to 100% while the file is still encoding, instead of tracking ffmpeg's actual
-`frac`/`speed`/`eta`. Fix the progress reporting so both bars reflect real
-encode progress. Also want some extra animation/flourish on the bars (TBD —
-design later).
-
-Affects `embedJS` (`st-pbar`/`st-obar`) in `internal/ui/serve_assets.go` and
-the `pp:convert` "progress" events emitted from `desktop/app.go` Convert /
-`internal/media/encode.go` Encode.
+Affects `.meterfill` in `desktop/frontend/src/style.css` / `internal/ui/report.go`.
 
 ## Audio-only fix bloats the library
 
 Observed on `Z:\TV Shows\True Blood` (80× h264): the Audio-only profile appended
 an AAC stereo track to every file and grew the library 194.35 GB → 202.14 GB
-(+7.79 GB). Adding AAC unconditionally is wrong when it only costs space.
+(+7.79 GB).
 
-- [ ] Don't add AAC when the existing audio already direct-plays widely
-      (e.g. the file already has an AAC track, or AC3/E-AC3 stereo that most
-      clients handle). Only add when the audio is genuinely incompatible
-      (DTS/TrueHD/PCM/multichannel-only) AND a stereo fallback is missing.
-- [ ] Make the AAC fallback bitrate sane and/or only mux a *stereo downmix*,
-      not a full re-encode that can exceed the source audio size.
-- [ ] When a plan's projected size grows, flag it clearly in analyze/dry and
-      consider auto-marking it "keep" unless the user opts in.
+- [x] Don't add AAC when the existing audio already direct-plays widely
+      (AAC, AC3, E-AC3, MP3 stereo-or-less). Only add when audio is
+      genuinely incompatible (DTS/TrueHD/PCM/multichannel-only).
+- [x] AAC fallback is a 192k stereo *downmix* (`-ac:a:N 2`), not a full
+      multichannel re-encode.
+- [x] When a plan's projected size grows, flag it in the file's `Why`
+      reasons (`⚠ grows by ~X`).
+- [ ] "Goal"-based profile selection (picked at scan time, not just a fixed
+      profile): zero-transcoding (current default), smallest file size
+      without quality loss (allows transcoding), 4K, device-targeted
+      (e.g. Nvidia Shield compat). Bigger feature — needs its own design
+      pass on `media.Profile` / the scan UI before implementation.
 
 ## Probe failures are silent
 
-Same run reported `80 files [32 unreadable]`. Root cause found: all 32 were
-macOS AppleDouble sidecars (`._Episode.mkv`) — junk written on a non-Mac drive,
-carrying the `.mkv` extension, which ffprobe rejects with
-"invalid as first byte of an EBML number".
-
 - [x] Skip dotfiles / `._*` AppleDouble sidecars in `FindVideos` (resolved).
-- [ ] Still surface real per-file probe errors with `--verbose`: path +
-      ffprobe stderr, so genuinely unreadable files can be diagnosed.
+- [x] Surface real per-file probe errors: ffprobe stderr is now captured
+      (`internal/media/probe.go`) and listed under "unreadable files" in
+      `--analyze` output (`internal/ui/analyze.go`), via the new
+      `Report.ProbeErrorDetails`.
 - [ ] Confirm remaining failures aren't `ffprobe` timeouts or long/UNC Windows
       paths; add a timeout + clearer handling.
 
@@ -59,6 +45,7 @@ carrying the `.mkv` extension, which ffprobe rejects with
       Dependency-free inline JS in `internal/ui/report.go` (sortJS).
 
 ## Linux / macOS support
+
 plexprep is currently developed and tested on Windows only. Port + verify on Unix:
 
 - [ ] Verify `ffmpeg`/`ffprobe` discovery works on Linux/macOS (PATH lookup is
@@ -75,3 +62,6 @@ plexprep is currently developed and tested on Windows only. Port + verify on Uni
 - [ ] Smoke-test the Bubble Tea TUI under common Unix terminals (iTerm2, GNOME
       Terminal, Alacritty) — colors/altscreen/gradient.
 - [ ] Document install via `go install` and via downloaded release binaries.
+
+NOTE: user now has Linux and macOS machines available — these items can be
+tested directly whenever, no longer blocked on access.
