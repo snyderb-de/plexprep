@@ -269,6 +269,11 @@ func renderHTML(root string, rows []folderRow, mode renderMode) string {
 	var b strings.Builder
 	b.WriteString(`<!doctype html><html lang="en"><head><meta charset="utf-8">`)
 	b.WriteString(`<meta name="viewport" content="width=device-width,initial-scale=1">`)
+	if mode == modeEmbed {
+		// srcdoc documents resolve relative links against the parent app URL by
+		// default; keep report fragment links inside the iframe.
+		b.WriteString(`<base href="about:srcdoc">`)
+	}
 	fmt.Fprintf(&b, "<title>plexprep report :: %s</title>", html.EscapeString(filepath.Base(root)))
 	b.WriteString(reportCSS)
 	if serve {
