@@ -28,6 +28,9 @@ jobs:
         id: tagmsg
         shell: bash
         run: |
+          # checkout plants a lightweight tag that shadows the annotated object;
+          # force-refetch tags so %(contents) is the tag message, not the commit.
+          git fetch --tags --force
           msg="$(git tag -l --format='%(contents)' "${GITHUB_REF_NAME}")"
           {
             echo 'body<<__PP_EOF__'

@@ -13,6 +13,7 @@ jobs:
     name: build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false # one flaky platform leg shouldn't abort the whole release
       matrix:
         include:
           - { goos: windows, goarch: amd64, ext: .exe }
@@ -31,6 +32,9 @@ jobs:
       - name: Extract tag message
         id: tagmsg
         run: |
+          # checkout plants a lightweight tag that shadows the annotated object;
+          # force-refetch tags so %(contents) is the tag message, not the commit.
+          git fetch --tags --force
           msg="$(git tag -l --format='%(contents)' "${{ github.ref_name }}")"
           {
             echo 'body<<__PP_EOF__'
