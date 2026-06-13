@@ -21,6 +21,19 @@ jobs:
           - { name: macos,   os: macos-latest,    platform: "darwin/universal" }
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the annotated tag object for its message
+
+      - name: Extract tag message
+        id: tagmsg
+        shell: bash
+        run: |
+          msg="$(git tag -l --format='%(contents)' "${GITHUB_REF_NAME}")"
+          {
+            echo 'body<<__PP_EOF__'
+            echo "$msg"
+            echo '__PP_EOF__'
+          } >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@v5
         with:
@@ -79,4 +92,5 @@ jobs:
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
+          body: ${{ steps.tagmsg.outputs.body }}
           files: ${{ env.ASSET }}

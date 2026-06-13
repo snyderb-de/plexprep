@@ -22,9 +22,21 @@ jobs:
           - { goos: darwin, goarch: arm64, ext: "" }
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the annotated tag object for its message
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+
+      - name: Extract tag message
+        id: tagmsg
+        run: |
+          msg="$(git tag -l --format='%(contents)' "${{ github.ref_name }}")"
+          {
+            echo 'body<<__PP_EOF__'
+            echo "$msg"
+            echo '__PP_EOF__'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build
         env:
@@ -49,4 +61,5 @@ jobs:
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
+          body: ${{ steps.tagmsg.outputs.body }}
           files: ${{ env.ASSET }}
