@@ -20,7 +20,7 @@ jobs:
           - { name: linux,   os: ubuntu-latest,   platform: "linux/amd64" }
           - { name: macos,   os: macos-latest,    platform: "darwin/universal" }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # need the annotated tag object for its message
 
@@ -38,11 +38,11 @@ jobs:
             echo '__PP_EOF__'
           } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: desktop/go.mod
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "20"
 
@@ -93,7 +93,7 @@ jobs:
           echo "ASSET=desktop/build/bin/${name}.zip" >> "$GITHUB_ENV"
 
       - name: Upload to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           body: ${{ steps.tagmsg.outputs.body }}
           files: ${{ env.ASSET }}
