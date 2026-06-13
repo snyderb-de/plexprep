@@ -2,6 +2,7 @@ package media
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -12,6 +13,7 @@ const (
 	ProfileZeroTranscode Profile = iota // SD/HD: x264 CRF18 only if legacy, else copy video. +AAC.
 	Profile4K                           // UHD: x265 CRF20 if legacy, else copy. +AAC.
 	ProfileAudioOnly                    // copy video always, just add AAC.
+	ProfileShrink                       // re-encode video at a user-chosen CRF to cut size. +AAC.
 )
 
 func (p Profile) String() string {
@@ -22,8 +24,19 @@ func (p Profile) String() string {
 		return "4K UHD (HEVC)"
 	case ProfileAudioOnly:
 		return "Audio-only fix"
+	case ProfileShrink:
+		return "Shrink (custom CRF)"
 	}
 	return "?"
+}
+
+// shrinkBaseCRF is the CRF that codecEfficiency's baseline ratios already
+// assume for each target codec (matches ProfileZeroTranscode/Profile4K).
+func shrinkBaseCRF(target string) int {
+	if target == "libx265" {
+		return 20
+	}
+	return 18
 }
 
 // legacyVideo is the set of codecs that force Plex transcoding and should be
@@ -98,13 +111,25 @@ func (mi *MediaInfo) hasCompatibleStereo() bool {
 }
 
 // BuildPlan decides what to do with a file under a profile and estimates size.
-func BuildPlan(mi *MediaInfo, profile Profile) Plan {
+// crf is only used by ProfileShrink (custom-quality re-encode).
+func BuildPlan(mi *MediaInfo, profile Profile, crf int) Plan {
 	p := Plan{OrigBytes: mi.SizeBytes}
 	legacy := legacyVideo[mi.Video.CodecName]
 
 	switch profile {
 	case ProfileAudioOnly:
 		// never touch video
+	case ProfileShrink:
+		p.ReencodeVideo = true
+		// x265 for HEVC sources (same family) and for 4K regardless of source —
+		// x264 at UHD is huge and slow. x264 for everything else.
+		if mi.Video.CodecName == "hevc" || mi.is4K() {
+			p.TargetCodec = "libx265"
+		} else {
+			p.TargetCodec = "libx264"
+		}
+		p.CRF = crf
+		p.Reasons = append(p.Reasons, fmt.Sprintf("shrink: re-encode at CRF%d", crf))
 	case Profile4K:
 		if legacy {
 			p.ReencodeVideo = true
@@ -155,6 +180,11 @@ func projectSize(mi *MediaInfo, p Plan) int64 {
 	var videoBits float64
 	if p.ReencodeVideo {
 		eff := codecEfficiency(mi.Video.CodecName, p.TargetCodec)
+		if p.CRF > 0 {
+			// codecEfficiency's ratios assume shrinkBaseCRF; scale further for
+			// higher/lower user-chosen CRF (~half the bitrate per +6 CRF).
+			eff *= math.Pow(0.5, float64(p.CRF-shrinkBaseCRF(p.TargetCodec))/6.0)
+		}
 		videoBits = float64(mi.VideoBitrate) * eff * dur
 	} else {
 		videoBits = float64(mi.VideoBitrate) * dur
@@ -186,6 +216,10 @@ func codecEfficiency(src, target string) float64 {
 	case "libx265":
 		// to HEVC
 		switch src {
+		case "hevc":
+			// Same codec family (shrink re-encode): no cross-codec gain — at the
+			// baseline CRF the bitrate is held; all savings come from CRF scaling.
+			return 1.0
 		case "mpeg2video", "mpeg1video":
 			return 0.40
 		default:
@@ -193,6 +227,9 @@ func codecEfficiency(src, target string) float64 {
 		}
 	default: // libx264
 		switch src {
+		case "h264":
+			// Same codec family (shrink re-encode): see above.
+			return 1.0
 		case "mpeg2video", "mpeg1video":
 			return 0.50
 		case "vc1", "wmv3", "wmv2":

@@ -54,7 +54,7 @@ func DryRunPaths(label string, paths []string, profile media.Profile) error {
 
 	var origTot, projTot int64
 	for _, p := range paths {
-		it, err := media.BuildItem(p, profile)
+		it, err := media.BuildItem(p, profile, 0)
 		if err != nil {
 			rows = append(rows, style.Red.S(style.Trunc(filepath.Base(p), wName)+"  probe error"))
 			continue

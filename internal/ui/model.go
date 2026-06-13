@@ -150,7 +150,7 @@ func scanCmd(root string) tea.Cmd {
 
 func probeCmd(path string, p media.Profile) tea.Cmd {
 	return func() tea.Msg {
-		it, err := media.BuildItem(path, p)
+		it, err := media.BuildItem(path, p, 0)
 		return probedMsg{it, err}
 	}
 }

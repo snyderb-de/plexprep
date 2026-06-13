@@ -21,7 +21,7 @@ func ac3Stereo() Stream { return Stream{CodecName: "ac3", CodecType: "audio", Ch
 func dts() Stream       { return Stream{CodecName: "dts", CodecType: "audio", Channels: 6} }
 
 func TestPlanLegacyZeroTranscode(t *testing.T) {
-	p := BuildPlan(mi("mpeg2video", 720, 480, "tt", ac3()), ProfileZeroTranscode)
+	p := BuildPlan(mi("mpeg2video", 720, 480, "tt", ac3()), ProfileZeroTranscode, 0)
 	if !p.ReencodeVideo || p.TargetCodec != "libx264" {
 		t.Errorf("legacy mpeg2 should re-encode to libx264, got %+v", p)
 	}
@@ -37,7 +37,7 @@ func TestPlanLegacyZeroTranscode(t *testing.T) {
 }
 
 func TestPlanModernCopied(t *testing.T) {
-	p := BuildPlan(mi("h264", 1920, 1080, "progressive", aac()), ProfileZeroTranscode)
+	p := BuildPlan(mi("h264", 1920, 1080, "progressive", aac()), ProfileZeroTranscode, 0)
 	if p.ReencodeVideo {
 		t.Error("h264 should be copied, not re-encoded")
 	}
@@ -50,14 +50,14 @@ func TestPlanModernCopied(t *testing.T) {
 }
 
 func TestPlan4KUsesHEVC(t *testing.T) {
-	p := BuildPlan(mi("mpeg2video", 3840, 2160, "progressive", ac3()), Profile4K)
+	p := BuildPlan(mi("mpeg2video", 3840, 2160, "progressive", ac3()), Profile4K, 0)
 	if !p.ReencodeVideo || p.TargetCodec != "libx265" {
 		t.Errorf("4K legacy should re-encode to libx265, got %+v", p)
 	}
 }
 
 func TestPlanAudioOnlyNeverReencodes(t *testing.T) {
-	p := BuildPlan(mi("mpeg2video", 720, 480, "tt", ac3()), ProfileAudioOnly)
+	p := BuildPlan(mi("mpeg2video", 720, 480, "tt", ac3()), ProfileAudioOnly, 0)
 	if p.ReencodeVideo {
 		t.Error("audio-only profile must never re-encode video")
 	}
@@ -67,7 +67,7 @@ func TestPlanAudioOnlyNeverReencodes(t *testing.T) {
 }
 
 func TestPlanCompatibleStereoSkipsAAC(t *testing.T) {
-	p := BuildPlan(mi("h264", 1920, 1080, "progressive", ac3Stereo()), ProfileAudioOnly)
+	p := BuildPlan(mi("h264", 1920, 1080, "progressive", ac3Stereo()), ProfileAudioOnly, 0)
 	if p.AddAAC {
 		t.Error("ac3 stereo already direct-plays; should not add AAC fallback")
 	}
@@ -77,14 +77,14 @@ func TestPlanCompatibleStereoSkipsAAC(t *testing.T) {
 }
 
 func TestPlanIncompatibleAudioGetsAAC(t *testing.T) {
-	p := BuildPlan(mi("h264", 1920, 1080, "progressive", dts()), ProfileAudioOnly)
+	p := BuildPlan(mi("h264", 1920, 1080, "progressive", dts()), ProfileAudioOnly, 0)
 	if !p.AddAAC {
 		t.Error("dts-only (multichannel, no stereo fallback) should add AAC")
 	}
 }
 
 func TestPlanGrowWarning(t *testing.T) {
-	p := BuildPlan(mi("h264", 1920, 1080, "progressive", dts()), ProfileAudioOnly)
+	p := BuildPlan(mi("h264", 1920, 1080, "progressive", dts()), ProfileAudioOnly, 0)
 	if p.SavedBytes() >= 0 {
 		t.Fatalf("expected projected size to grow when adding AAC with no video savings, got %+v", p)
 	}
@@ -96,6 +96,40 @@ func TestPlanGrowWarning(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected a grow-warning reason, got %v", p.Reasons)
+	}
+}
+
+func TestPlanShrinkRoutesCodec(t *testing.T) {
+	// h264 1080p -> libx264, CRF passed through, always re-encodes (never no-op).
+	p := BuildPlan(mi("h264", 1920, 1080, "progressive", aac()), ProfileShrink, 23)
+	if !p.ReencodeVideo || p.TargetCodec != "libx264" {
+		t.Errorf("shrink h264 1080p should re-encode to libx264, got %+v", p)
+	}
+	if p.CRF != 23 {
+		t.Errorf("shrink should pass CRF through, got %d", p.CRF)
+	}
+	if p.NoOp() {
+		t.Error("shrink must never be a no-op")
+	}
+
+	// hevc -> libx265 (same family).
+	if p := BuildPlan(mi("hevc", 1920, 1080, "progressive", aac()), ProfileShrink, 24); p.TargetCodec != "libx265" {
+		t.Errorf("shrink hevc should use libx265, got %q", p.TargetCodec)
+	}
+
+	// 4K source uses libx265 regardless of source codec (x264 at UHD is huge).
+	if p := BuildPlan(mi("h264", 3840, 2160, "progressive", aac()), ProfileShrink, 22); p.TargetCodec != "libx265" {
+		t.Errorf("shrink 4K should use libx265 even from h264, got %q", p.TargetCodec)
+	}
+}
+
+func TestShrinkSameFamilyNoPhantomSavings(t *testing.T) {
+	// Re-encoding h264->libx264 at the baseline CRF must not project a free
+	// ~35% reduction (the old cross-codec efficiency bug). At CRF18 the video
+	// bitrate is held, so adding an AAC track should make it grow, not shrink.
+	p := BuildPlan(mi("h264", 1920, 1080, "progressive", dts()), ProfileShrink, 18)
+	if p.SavedBytes() > 0 {
+		t.Errorf("same-family CRF18 re-encode should not project savings, got saved=%d", p.SavedBytes())
 	}
 }
 

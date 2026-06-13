@@ -11,7 +11,7 @@ export function Browse():Promise<string>;
 
 export function BrowseFiles():Promise<Array<string>>;
 
-export function Convert(arg1:Array<string>,arg2:string,arg3:boolean,arg4:boolean):Promise<void>;
+export function Convert(arg1:Array<string>,arg2:string,arg3:boolean,arg4:boolean,arg5:number):Promise<void>;
 
 export function Reveal(arg1:string):Promise<void>;
 

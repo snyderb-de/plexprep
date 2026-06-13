@@ -143,14 +143,15 @@ func ReadListFile(path string) ([]string, error) {
 	return out, nil
 }
 
-// BuildItem probes a path and plans it under profile.
-func BuildItem(path string, profile Profile) (*Item, error) {
+// BuildItem probes a path and plans it under profile. crf is only used by
+// ProfileShrink.
+func BuildItem(path string, profile Profile, crf int) (*Item, error) {
 	mi, err := Probe(path)
 	if err != nil {
 		return nil, err
 	}
 	it := &Item{Info: mi, Is4K: mi.is4K()}
-	it.Plan = BuildPlan(mi, profile)
+	it.Plan = BuildPlan(mi, profile, crf)
 	it.Selected = !it.Plan.NoOp()
 	return it, nil
 }

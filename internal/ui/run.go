@@ -54,7 +54,7 @@ func RunHeadlessPaths(label string, paths []string, profile media.Profile, repla
 		name := filepath.Base(p)
 		idx := style.Mid.S(fmt.Sprintf("[%d/%d]", i+1, len(paths)))
 
-		it, err := media.BuildItem(p, profile)
+		it, err := media.BuildItem(p, profile, 0)
 		if err != nil {
 			fmt.Printf("  %s %s %s\n", idx, style.Red.S("✘"), style.Red.S(style.Trunc(name, 50)+" — probe error"))
 			fail++

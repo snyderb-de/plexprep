@@ -150,7 +150,8 @@ func (a *App) Reveal(path string) {
 }
 
 // Convert runs the selected files sequentially, emitting "pp:convert" events.
-func (a *App) Convert(paths []string, profile string, replace, del bool) {
+// crf is only used by the "shrink" profile (custom-quality re-encode).
+func (a *App) Convert(paths []string, profile string, replace, del bool, crf int) {
 	a.mu.Lock()
 	if a.busy {
 		a.mu.Unlock()
@@ -168,6 +169,13 @@ func (a *App) Convert(paths []string, profile string, replace, del bool) {
 		prof = media.Profile4K
 	case "audio":
 		prof = media.ProfileAudioOnly
+	case "shrink":
+		prof = media.ProfileShrink
+	}
+	if crf < 18 {
+		crf = 18
+	} else if crf > 30 {
+		crf = 30
 	}
 
 	emit := func(v map[string]any) { wr.EventsEmit(a.ctx, "pp:convert", v) }
@@ -190,7 +198,7 @@ func (a *App) Convert(paths []string, profile string, replace, del bool) {
 			emit(map[string]any{"t": "fail", "name": name, "err": "not a video file"})
 			continue
 		}
-		it, err := media.BuildItem(p, prof)
+		it, err := media.BuildItem(p, prof, crf)
 		if err != nil {
 			fail++
 			emit(map[string]any{"t": "fail", "name": name, "err": "probe: " + err.Error()})

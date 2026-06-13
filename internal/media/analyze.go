@@ -197,7 +197,7 @@ func AnalyzePathsCB(label string, paths []string, cb func(name string) bool) *Re
 
 	// Second pass: total savings + time under the recommended profile.
 	for _, mi := range infos {
-		plan := BuildPlan(mi, r.Recommended)
+		plan := BuildPlan(mi, r.Recommended, 0)
 		secs := EstEncodeSeconds(mi, plan)
 		r.OrigBytes += mi.SizeBytes
 		r.ProjBytes += plan.ProjectedBytes

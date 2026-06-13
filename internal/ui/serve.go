@@ -355,6 +355,7 @@ func crumbs(p string) []lsEntry {
 type convertReq struct {
 	Root    string   `json:"root"`
 	Profile string   `json:"profile"`
+	CRF     int      `json:"crf"`
 	Replace bool     `json:"replace"`
 	Delete  bool     `json:"delete"`
 	Paths   []string `json:"paths"`
@@ -405,6 +406,14 @@ func (s *server) handleConvert(w http.ResponseWriter, r *http.Request) {
 		profile = media.Profile4K
 	case "audio":
 		profile = media.ProfileAudioOnly
+	case "shrink":
+		profile = media.ProfileShrink
+	}
+	crf := req.CRF
+	if crf < 18 {
+		crf = 18
+	} else if crf > 30 {
+		crf = 30
 	}
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
@@ -440,7 +449,7 @@ func (s *server) handleConvert(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		it, err := media.BuildItem(p, profile)
+		it, err := media.BuildItem(p, profile, crf)
 		if err != nil {
 			fail++
 			emit(map[string]any{"t": "fail", "name": name, "err": "probe: " + err.Error()})

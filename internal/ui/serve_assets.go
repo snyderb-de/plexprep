@@ -9,6 +9,11 @@ const convertOverlays = `
    <label><input type="radio" name="prof" value="" checked> <b>zero-transcode</b> &middot; x264 CRF18 for legacy, copy modern (SD/HD)</label>
    <label><input type="radio" name="prof" value="4k"> <b>4K UHD</b> &middot; x265/HEVC CRF20 for legacy, keep HEVC</label>
    <label><input type="radio" name="prof" value="audio"> <b>audio-only</b> &middot; copy video, add AAC stereo only</label>
+   <label><input type="radio" name="prof" value="shrink"> <b>shrink</b> &middot; re-encode every file at a custom CRF to cut size</label>
+ </div></div>
+ <div class="optrow" id="opt-crfrow" hidden><span class="optk">quality</span><div class="optv">
+   <input type="range" id="opt-crf" min="18" max="30" step="1" value="20">
+   <div class="crflabel">CRF <b id="opt-crf-val">20</b> &mdash; <span id="opt-crf-tag">visually lossless</span></div>
  </div></div>
  <div class="optrow"><span class="optk">output</span><div class="optv">
    <label><input type="checkbox" id="opt-replace"> <b>replace in place</b> &middot; output takes source name, source &rarr; <span class="amber">.original</span> backup</label>
@@ -53,6 +58,13 @@ const serveCSS = `<style>
 .optv{display:flex;flex-direction:column;gap:7px;font-size:12.5px;color:var(--mid)}
 .optv label{cursor:pointer}.optv b{color:var(--bright)}
 .optv input{accent-color:var(--fg);vertical-align:middle;margin-right:6px}
+#opt-crf{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:3px;
+  background:linear-gradient(to right,#3ecf6e,#e8c547,#e0524a);outline:none}
+#opt-crf::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;
+  background:var(--bright);border:1px solid var(--fg);cursor:pointer}
+#opt-crf::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+  background:var(--bright);border:1px solid var(--fg);cursor:pointer}
+.crflabel{margin-top:6px;font-size:12px;color:var(--mid)}
 .optsummary{margin:14px 0 6px;color:var(--bright);font-size:12.5px;border-top:1px solid var(--line);padding-top:12px}
 .optbtns{display:flex;gap:10px;margin-top:12px}
 /* status dashboard */
@@ -77,6 +89,24 @@ const serveCSS = `<style>
 .statbtns{margin-top:16px;display:flex;gap:10px}
 </style>`
 
+// crfControlJS is the shared CRF-slider behaviour for both UIs: continuous
+// green→red gradient on the value/quality tag, show the quality row only for the
+// shrink profile, and re-render the convert summary when the profile changes.
+// It relies on $, picked, hb and renderSummary being in the enclosing scope.
+const crfControlJS = `
+ function crfColor(t){ var r=Math.round(62+(224-62)*t), g=Math.round(207+(82-207)*t), b=Math.round(110+(74-110)*t); return 'rgb('+r+','+g+','+b+')'; }
+ function updateCRF(){
+   var el=$('opt-crf'); if(!el) return;
+   var v=+el.value, t=(v-18)/12, c=crfColor(t);
+   var val=$('opt-crf-val'), tag=$('opt-crf-tag');
+   val.textContent=v; val.style.color=c; tag.style.color=c;
+   tag.textContent = t<0.17?'visually lossless': t<0.42?'good': t<0.75?'noticeable loss':'dogwater';
+ }
+ function syncProfRow(){ var prof=(document.querySelector('input[name=prof]:checked')||{}).value; $('opt-crfrow').hidden = prof!=='shrink'; renderSummary(); }
+ var crfEl=$('opt-crf'); if(crfEl) crfEl.addEventListener('input', updateCRF);
+ document.querySelectorAll('input[name=prof]').forEach(function(r){ r.addEventListener('change', syncProfRow); });
+ updateCRF(); syncProfRow();`
+
 // serveJS drives the convert flow: open options, POST the selection, stream
 // newline-JSON progress into the status dashboard.
 const serveJS = `<script>
@@ -87,13 +117,21 @@ const serveJS = `<script>
  function hd(s){s=Math.round(s); if(s<=0)return '0s'; var h=(s/3600)|0,m=((s%3600)/60)|0,x=s%60; if(h>0)return h+'h '+m+'m'; if(m>0)return m+'m '+x+'s'; return x+'s';}
  function picked(){var o=[]; document.querySelectorAll('.pick-cb').forEach(function(c){ if(c.checked) o.push({path:c.getAttribute('data-path'),size:+c.getAttribute('data-size')||0,saved:+c.getAttribute('data-saved')||0}); }); return o;}
 
+ function renderSummary(){
+   var p=picked(); if(!p.length) return;
+   var sz=p.reduce(function(a,x){return a+x.size;},0), sv=p.reduce(function(a,x){return a+x.saved;},0);
+   var prof=(document.querySelector('input[name=prof]:checked')||{}).value||'';
+   var tail = prof==='shrink'
+     ? ' <span class="dimx">&middot; savings depend on CRF (shown live during convert)</span>'
+     : ' &rarr; reclaim '+(sv>=0?'<b class="save">'+hb(sv)+'</b>':'<b class="grow">&#9650; +'+hb(-sv)+' larger</b>')+' <span class="dimx">(estimate)</span>';
+   $('opt-summary').innerHTML='<b>'+p.length+'</b> file'+(p.length===1?'':'s')+' &middot; '+hb(sz)+tail;
+ }
+` + crfControlJS + `
+
  var cv=$('sel-convert');
  if(cv) cv.addEventListener('click', function(){
    var p=picked(); if(!p.length) return;
-   var sz=p.reduce(function(a,x){return a+x.size;},0), sv=p.reduce(function(a,x){return a+x.saved;},0);
-   $('opt-summary').innerHTML='<b>'+p.length+'</b> file'+(p.length===1?'':'s')+' &middot; '+hb(sz)+
-     ' &rarr; reclaim '+(sv>=0?'<b class="save">'+hb(sv)+'</b>':'<b class="grow">&#9650; +'+hb(-sv)+' larger</b>')+
-     ' <span class="dimx">(estimate)</span>';
+   renderSummary();
    $('opts').hidden=false;
  });
  var oc=$('opt-cancel'); if(oc) oc.addEventListener('click', function(){ $('opts').hidden=true; });
@@ -114,11 +152,12 @@ const serveJS = `<script>
  if(os_) os_.addEventListener('click', function(){
    var p=picked(); if(!p.length) return;
    var prof=(document.querySelector('input[name=prof]:checked')||{}).value||'';
-   var body={root:root, profile:prof, replace:$('opt-replace').checked, delete:$('opt-delete').checked, paths:p.map(function(x){return x.path;})};
+   var crf=+(($('opt-crf')||{}).value||20);
+   var body={root:root, profile:prof, crf:crf, replace:$('opt-replace').checked, delete:$('opt-delete').checked, paths:p.map(function(x){return x.path;})};
    $('opts').hidden=true; $('status').hidden=false; $('st-close').hidden=true; $('st-abort').hidden=false; $('st-abort-now').hidden=false; abort=false;
    $('st-log').innerHTML=''; $('st-phase').textContent='CONVERTING'; startClock();
    var s={total:p.length,done:0,ok:0,fail:0,skip:0,reclaim:0,eta:0}; grid(s);
-   logln('dimx','POST /api/convert · '+p.length+' files · profile='+(prof||'zero')+(body.replace?' · replace':'')+(body.delete?' · delete':''));
+   logln('dimx','POST /api/convert · '+p.length+' files · profile='+(prof||'zero')+(prof==='shrink'?' · crf='+crf:'')+(body.replace?' · replace':'')+(body.delete?' · delete':''));
 
    fetch('/api/convert',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
    .then(function(r){
@@ -218,13 +257,21 @@ const embedJS = `<script>
  function hd(s){s=Math.round(s); if(s<=0)return '0s'; var h=(s/3600)|0,m=((s%3600)/60)|0,x=s%60; if(h>0)return h+'h '+m+'m'; if(m>0)return m+'m '+x+'s'; return x+'s';}
  function picked(){var o=[]; document.querySelectorAll('.pick-cb').forEach(function(c){ if(c.checked) o.push({path:c.getAttribute('data-path'),size:+c.getAttribute('data-size')||0,saved:+c.getAttribute('data-saved')||0}); }); return o;}
 
+ function renderSummary(){
+   var p=picked(); if(!p.length) return;
+   var sz=p.reduce(function(a,x){return a+x.size;},0), sv=p.reduce(function(a,x){return a+x.saved;},0);
+   var prof=(document.querySelector('input[name=prof]:checked')||{}).value||'';
+   var tail = prof==='shrink'
+     ? ' <span class="dimx">&middot; savings depend on CRF (shown live during convert)</span>'
+     : ' &rarr; reclaim '+(sv>=0?'<b class="save">'+hb(sv)+'</b>':'<b class="grow">&#9650; +'+hb(-sv)+' larger</b>')+' <span class="dimx">(estimate)</span>';
+   $('opt-summary').innerHTML='<b>'+p.length+'</b> file'+(p.length===1?'':'s')+' &middot; '+hb(sz)+tail;
+ }
+` + crfControlJS + `
+
  var cv=$('sel-convert');
  if(cv) cv.addEventListener('click', function(){
    var p=picked(); if(!p.length) return;
-   var sz=p.reduce(function(a,x){return a+x.size;},0), sv=p.reduce(function(a,x){return a+x.saved;},0);
-   $('opt-summary').innerHTML='<b>'+p.length+'</b> file'+(p.length===1?'':'s')+' &middot; '+hb(sz)+
-     ' &rarr; reclaim '+(sv>=0?'<b class="save">'+hb(sv)+'</b>':'<b class="grow">&#9650; +'+hb(-sv)+' larger</b>')+
-     ' <span class="dimx">(estimate)</span>';
+   renderSummary();
    $('opts').hidden=false;
  });
  var oc=$('opt-cancel'); if(oc) oc.addEventListener('click', function(){ $('opts').hidden=true; });
@@ -250,11 +297,12 @@ const embedJS = `<script>
    var p=picked(); if(!p.length) return;
    if(!APP){ alert('desktop bridge unavailable'); return; }
    var prof=(document.querySelector('input[name=prof]:checked')||{}).value||'';
+   var crf=+(($('opt-crf')||{}).value||20);
    $('opts').hidden=true; $('status').hidden=false; $('st-close').hidden=true; $('st-abort').hidden=false; $('st-abort-now').hidden=false;
    $('st-log').innerHTML=''; $('st-phase').textContent='CONVERTING';
    s={total:p.length,done:0,ok:0,fail:0,skip:0,reclaim:0,eta:0}; startClock(); grid();
-   logln('dimx','convert '+p.length+' files · profile='+(prof||'zero')+($('opt-replace').checked?' · replace':'')+($('opt-delete').checked?' · delete':''));
-   APP.Convert(p.map(function(x){return x.path;}), prof, $('opt-replace').checked, $('opt-delete').checked);
+   logln('dimx','convert '+p.length+' files · profile='+(prof||'zero')+(prof==='shrink'?' · crf='+crf:'')+($('opt-replace').checked?' · replace':'')+($('opt-delete').checked?' · delete':''));
+   APP.Convert(p.map(function(x){return x.path;}), prof, $('opt-replace').checked, $('opt-delete').checked, crf);
  });
  var sc=$('st-close'); if(sc) sc.addEventListener('click', function(){ if(P!==window&&P.ppDone){ P.ppDone(); } else { location.reload(); } });
  var sa=$('st-abort'); if(sa) sa.addEventListener('click', function(){ if(APP&&APP.Abort) APP.Abort(); sa.textContent='aborting…'; });
